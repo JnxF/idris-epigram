@@ -12,9 +12,7 @@ data Exp : TyExp -> Type where
   IfExp : Exp Bool -> Exp t -> Exp t -> Exp t
 
 addValNats : Val Nat -> Val Nat -> Val Nat
-addValNats x y = case x of
-                      (ValNat x') => case y of
-                                           (ValNat y') => ValNat (x' + y')
+addValNats (ValNat a) (ValNat b) = ValNat (a + b)
 
 eval : Exp t -> Val t
 eval (SingleExp v) = v
@@ -41,7 +39,7 @@ exec : (c : Code s s') -> Stack s -> Stack s'
 exec Skip s = s
 exec (c1 ++ c2) s = exec c2 (exec c1 s)
 exec (PUSH v) s = StackAppend v s
-exec ADD (StackAppend n (StackAppend m s)) = StackAppend (addValNats n m) s
+exec ADD (StackAppend (ValNat n) (StackAppend (ValNat m) s)) = StackAppend (ValNat (n+m)) s
 exec (IF c1 c2) (StackAppend (ValBool False) s) = exec c1 s
 exec (IF c1 c2) (StackAppend (ValBool True) s) = exec c2 s
 
@@ -52,5 +50,12 @@ compile (IfExp b e1 e2) = (compile b) ++ IF (compile e1) (compile e2)
 
 correct : (e : Exp t) -> (ss : Stack s) -> StackAppend (eval e) ss = exec (compile e) ss
 correct (SingleExp v) ss = Refl
-correct (PlusExp e1 e2) ss = ?h1
-correct (IfExp b e1 e2) ss = ?h2
+correct (PlusExp e1 e2) ss =
+  let p1 = correct e1 ss in
+  let p2 = correct e2 ss in
+  ?hole1
+correct (IfExp b e1 e2) ss =
+  let p1 = correct e1 ss in
+  let p2 = correct e2 ss in
+  let p3 = correct b ss in
+  ?hole2
