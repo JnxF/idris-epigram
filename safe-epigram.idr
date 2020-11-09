@@ -23,10 +23,10 @@ eval (IfExp b e1 e2) = case eval b of
 
 data Stack : (s : List TyExp) -> Type where
   Nil : Stack []
-  StackAppend : Val t -> Stack s -> Stack (t :: s)
+  (::) : Val t -> Stack s -> Stack (t :: s)
 
 top : Stack (t :: s) -> Val t
-top (StackAppend v s) = v
+top (v :: s) = v
 
 data Code : (s : List TyExp) -> (s' : List TyExp) -> Type where
   Skip : Code s s
@@ -38,17 +38,17 @@ data Code : (s : List TyExp) -> (s' : List TyExp) -> Type where
 exec : (c : Code s s') -> Stack s -> Stack s'
 exec Skip s = s
 exec (c1 ++ c2) s = exec c2 (exec c1 s)
-exec (PUSH v) s = StackAppend v s
-exec ADD (StackAppend (ValNat n) (StackAppend (ValNat m) s)) = StackAppend (ValNat (n+m)) s
-exec (IF c1 c2) (StackAppend (ValBool False) s) = exec c1 s
-exec (IF c1 c2) (StackAppend (ValBool True) s) = exec c2 s
+exec (PUSH v) s = v :: s
+exec ADD (n :: (m :: s)) = addValNats n m :: s
+exec (IF c1 c2) ((ValBool True) :: s) = exec c1 s
+exec (IF c1 c2) ((ValBool False) :: s) = exec c2 s
 
 compile : Exp t -> Code s (t :: s)
 compile (SingleExp v) = PUSH v
-compile (PlusExp e1 e2) = compile e2 ++ compile e1 ++ ADD
+compile (PlusExp e1 e2) = (compile e2 ++ compile e1) ++ ADD
 compile (IfExp b e1 e2) = (compile b) ++ IF (compile e1) (compile e2)
 
-correct : (e : Exp t) -> (ss : Stack s) -> StackAppend (eval e) ss = exec (compile e) ss
+correct : (e : Exp t) -> (ss : Stack s) -> (eval e) :: ss = exec (compile e) ss
 correct (SingleExp v) ss = Refl
 correct (PlusExp e1 e2) ss =
   let p1 = correct e1 ss in
