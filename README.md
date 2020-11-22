@@ -1,6 +1,6 @@
 # Safe EPIGRAM
 ![Idris workflow](https://github.com/jnxf/safe-epigram/workflows/Idris%20workflow/badge.svg)
-![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2FJnxF%2Fsafe-epigram)
+![Hits](https://visitor-badge.glitch.me/badge?page_id=jnxf.safe-idris)
 [![GitHub stars](https://img.shields.io/github/stars/JnxF/safe-epigram.svg)](https://GitHub.com/JnxF/safe-epigram/stargazers/)
 [![GitHub forks](https://img.shields.io/github/forks/JnxF/safe-epigram.svg)](https://GitHub.com/JnxF/safe-epigram/network/)
 [![GitHub repo size in bytes](https://img.shields.io/github/repo-size/JnxF/safe-epigram.svg)](https://github.com/JnxF/safe-epigram)
