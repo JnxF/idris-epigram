@@ -1,3 +1,5 @@
+import Control.Monad.State
+
 %default total
 
 data TyExp = NatTy | BoolTy
@@ -16,43 +18,92 @@ Eq (V t) where
   (==) (VNat x) (VNat y) = x == y
   (==) (VBool x) (VBool y) = x == y
 
+VariableId : Type
+VariableId = String
+
 data Exp : Bool -> TyExp -> Type where
+  VarExp : VariableId -> Exp False NatTy
   SingleExp : (v : V t) -> Exp False t
   PlusExp : (x : Exp a NatTy) -> (y : Exp b NatTy) -> Exp (a || b) NatTy
   IfExp : (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> Exp (a || b || c) t
   ThrowExp : Exp True t
   CatchExp : (x : Exp a t) -> (h : Exp b t) -> Exp (a && b) t
 
+data VarElem : VariableId -> List (VariableId, V t) -> Type where
+  Here : VarElem v ((v, _) :: xs)
+  There : (later : VarElem x xs) -> VarElem x (y :: xs)
+
+{-
+l : List (VariableId, V NatTy)
+l = [("x", VNat 5), ("y", VNat 6)]
+-}
+StateType : Type
+StateType = List (VariableId, V NatTy)
+
+{-
+data Stm : TyExp -> Type where
+  Declar : VariableId -> Exp False t -> Stm t
+  Assign : VariableId -> Exp False t -> Stm t
+-}
+
+{-
+data Stm : TyExp -> Type where
+  Statement : VariableId -> Exp False t -> Stm t
+
+evalStm : List (Stm t) -> State (List (VariableId, V NatTy)) ()
+evalStm [] = pure ()
+evalStm ((Statement x ex) :: xs) = do
+    current <- get
+    put ((x, VNat 5) :: (the (List(VariableId, V NatTy)) current))
+    evalStm xs
+-}
+
+{-evalStm [] = pure ()
+evalStm ((Statement x ex) :: xs) = do
+    current <- get
+    put ((x, VNat 5) :: (the (List(VariableId, V NatTy)) current))
+    evalStm xs -}
+
+{-
+myCal : State ??? ()
+myCalc = do
+  current <- get
+  put(("x", eval(VNat 5)) :: current)  -- x = 5
+  let xValue : (either a VNat or a VBool)= extractFromList "x" current
+  put(("y", PlusExp (SingleVal xValue) (SingleVal (VNat -1)) ))  -- y = x - 1
+-}
+
 
 mutual
-  evalPlusExp : (p : (a || (Delay b)) = False) -> (x : Exp a NatTy) -> (y : Exp b NatTy) -> V NatTy
-  evalPlusExp {a = False} {b = False} p x y =
-    case eval Refl x of
-          VNat x' => case eval Refl y of
+  evalPlusExp : StateType -> (p : (a || (Delay b)) = False) -> (x : Exp a NatTy) -> (y : Exp b NatTy) -> V NatTy
+  evalPlusExp {a = False} {b = False} st p x y =
+    case eval st Refl x of
+          VNat x' => case eval st Refl y of
                              VNat y' => VNat (x' + y')
-  evalPlusExp {a = True} {b = _} Refl _ _ impossible
-  evalPlusExp {a = False} {b = True} Refl _ _ impossible
+  evalPlusExp {a = True} {b = _} st Refl _ _ impossible
+  evalPlusExp {a = False} {b = True} st Refl _ _ impossible
 
-  evalIfExp : (p : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> V t
-  evalIfExp {a = False} {b = False} {c = False} p cond x y =
-    case eval Refl cond of
-      VBool True => eval Refl x
-      VBool False => eval Refl y
-  evalIfExp {a = False} {b = False} {c = True} Refl _ _ _ impossible
-  evalIfExp {a = False} {b = True} {c = _} Refl _ _ _ impossible
-  evalIfExp {a = True} {b = _} {c = _} Refl _ _ _ impossible
+  evalIfExp : StateType -> (p : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> V t
+  evalIfExp {a = False} {b = False} {c = False} st p cond x y =
+    case eval st Refl cond of
+      VBool True => eval st Refl x
+      VBool False => eval st Refl y
+  evalIfExp {a = False} {b = False} {c = True} st Refl _ _ _ impossible
+  evalIfExp {a = False} {b = True} {c = _} st Refl _ _ _ impossible
+  evalIfExp {a = True} {b = _} {c = _} st Refl _ _ _ impossible
 
-  evalCatchExp : (p : (a && (Delay b)) = False) -> (x : Exp a t) -> (h : Exp b t) -> V t
-  evalCatchExp {a = False} {b} p x h = eval Refl x
-  evalCatchExp {a = True} {b = False} p x h = eval Refl h
-  evalCatchExp {a = True} {b = True} Refl _ _ impossible
+  evalCatchExp : StateType -> (p : (a && (Delay b)) = False) -> (x : Exp a t) -> (h : Exp b t) -> V t
+  evalCatchExp {a = False} {b} st p x h = eval st Refl x
+  evalCatchExp {a = True} {b = False} st p x h = eval st Refl h
+  evalCatchExp {a = True} {b = True} st Refl _ _ impossible
 
-  eval : (b = False) -> Exp b t -> V t
-  eval p (SingleExp v) = v
-  eval p (PlusExp x y) = evalPlusExp p x y
-  eval p (IfExp cond x y) = evalIfExp p cond x y
-  eval Refl ThrowExp impossible
-  eval p (CatchExp x h) = evalCatchExp p x h
+  eval : StateType -> (b = False) -> Exp b t -> V t
+  eval st p (VarExp v) = ?handlerForVarExp
+  eval st p (SingleExp v) = v
+  eval st p (PlusExp x y) = evalPlusExp st p x y
+  eval st p (IfExp cond x y) = evalIfExp st p cond x y
+  eval st Refl ThrowExp impossible
+  eval st p (CatchExp x h) = evalCatchExp st p x h
 
 mutual
   El : Ty -> Type
@@ -71,6 +122,7 @@ mutual
 
 --comp?
 compCatch : Exp b ty -> Code (Val ty :: (s'' ++ (Han s s') :: s)) s' -> Code (s'' ++ (Han s s') :: s) s'
+compCatch (VarExp v) c = ?dontKnowYet
 compCatch (SingleExp v) c = PUSH v c
 compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val NatTy :: _} y (ADD c))
 compCatch {s} {s''} (IfExp cond x y) c = compCatch cond (IF (compCatch x c) (compCatch y c))
@@ -100,6 +152,7 @@ mutual
   compIfExp {a = True} Refl _ _ _ _ impossible
 
   comp : (b = False) -> Exp b ty -> Code (Val ty :: s) s' -> Code s s'
+  comp p (VarExp v) c = ?dontYetProbablyNow
   comp p (SingleExp v) c = PUSH v c
   comp p (PlusExp x y) c = compPlusExp p x y c
   comp p (IfExp cond x y) co = compIfExp p cond x y co
@@ -137,11 +190,11 @@ mutual
 partial
 testExp : (t = False) -> Exp t tyExp -> V tyExp -> Bool
 testExp Refl e (VNat n) =
-  let t1 = eval Refl e == (VNat n) in
+  let t1 = eval [] Refl e == (VNat n) in
   let t2 = top (exec (compile Refl e) []) == n in
   t1 && t2
 testExp Refl e (VBool b) =
-  let t1 = eval Refl e == (VBool b) in
+  let t1 = eval [] Refl e == (VBool b) in
   let t2 = top (exec (compile Refl e) []) == b in
   t1 && t2
 
