@@ -1,6 +1,6 @@
 %default total
 
-data TyExp = Nat | Bool
+data TyExp = NatTy | BoolTy
 
 mutual
   StackType : Type
@@ -9,8 +9,8 @@ mutual
   data Ty = Han StackType StackType | Val TyExp
 
 data V : TyExp -> Type where
-  VNat : Nat -> V Nat
-  VBool : Bool -> V Bool
+  VNat : Nat -> V NatTy
+  VBool : Bool -> V BoolTy
 
 Eq (V t) where
   (==) (VNat x) (VNat y) = x == y
@@ -18,14 +18,14 @@ Eq (V t) where
 
 data Exp : Bool -> TyExp -> Type where
   SingleExp : (v : V t) -> Exp False t
-  PlusExp : (x : Exp a Nat) -> (y : Exp b Nat) -> Exp (a || b) Nat
-  IfExp : (cond : Exp a Bool) -> (x : Exp b t) -> (y : Exp c t) -> Exp (a || b || c) t
+  PlusExp : (x : Exp a NatTy) -> (y : Exp b NatTy) -> Exp (a || b) NatTy
+  IfExp : (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> Exp (a || b || c) t
   ThrowExp : Exp True t
   CatchExp : (x : Exp a t) -> (h : Exp b t) -> Exp (a && b) t
 
 
 mutual
-  evalPlusExp : (p : (a || (Delay b)) = False) -> (x : Exp a Nat) -> (y : Exp b Nat) -> V Nat
+  evalPlusExp : (p : (a || (Delay b)) = False) -> (x : Exp a NatTy) -> (y : Exp b NatTy) -> V NatTy
   evalPlusExp {a = False} {b = False} p x y =
     case eval Refl x of
           VNat x' => case eval Refl y of
@@ -33,7 +33,7 @@ mutual
   evalPlusExp {a = True} {b = _} Refl _ _ impossible
   evalPlusExp {a = False} {b = True} Refl _ _ impossible
 
-  evalIfExp : (p : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a Bool) -> (x : Exp b t) -> (y : Exp c t) -> V t
+  evalIfExp : (p : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> V t
   evalIfExp {a = False} {b = False} {c = False} p cond x y =
     case eval Refl cond of
       VBool True => eval Refl x
@@ -57,28 +57,29 @@ mutual
 mutual
   El : Ty -> Type
   El (Han t t') = Code t t'
-  El (Val Nat) = Nat
-  El (Val Bool) = Bool
+  El (Val NatTy) = Nat
+  El (Val BoolTy) = Bool
 
   data Code : (s : StackType) -> (s' : StackType) -> Type where
     PUSH : V tyExp -> Code (Val tyExp :: s) s' -> Code s s'
-    ADD : Code (Val Nat :: s) s' -> Code (Val Nat :: Val Nat :: s) s'
-    IF : (c1 : Code s s') -> (c2 : Code s s') -> Code (Val Bool :: s) s'
+    ADD : Code (Val NatTy :: s) s' -> Code (Val NatTy :: Val NatTy :: s) s'
+    IF : (c1 : Code s s') -> (c2 : Code s s') -> Code (Val BoolTy :: s) s'
     THROW : Code (s'' ++ (Han s s') :: s) s'
     MARK : (h : Code s s') -> (c : Code ((Han s s') :: s) s') -> Code s s'
     UNMARK : Code (t :: s) s' -> Code (t :: (Han s s') :: s) s'
     HALT : Code s s
 
+--comp?
 compCatch : Exp b ty -> Code (Val ty :: (s'' ++ (Han s s') :: s)) s' -> Code (s'' ++ (Han s s') :: s) s'
 compCatch (SingleExp v) c = PUSH v c
-compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val Nat :: _} y (ADD c))
+compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val NatTy :: _} y (ADD c))
 compCatch {s} {s''} (IfExp cond x y) c = compCatch cond (IF (compCatch x c) (compCatch y c))
 compCatch ThrowExp c = THROW
 compCatch (CatchExp x h) c = MARK (compCatch h c) (compCatch {s'' = []} x (UNMARK c))
 
 
 mutual
-  compPlusExp : (p : (a || b) = False) -> (x : Exp a Nat) ->  (y : Exp b Nat) -> (c : Code ((Val Nat) :: s) s') -> Code s s'
+  compPlusExp : (p : (a || b) = False) -> (x : Exp a NatTy) ->  (y : Exp b NatTy) -> (c : Code ((Val NatTy) :: s) s') -> Code s s'
   compPlusExp {a = False} {b = False} Refl x y c =
     comp Refl x (comp Refl y (ADD c))
   compPlusExp {a = False} {b = True} Refl _ _ _ impossible
@@ -91,7 +92,7 @@ mutual
     MARK (comp Refl h c) (compCatch {s'' = []} x (UNMARK c))
   compCatchExp {a = True} {b = True} Refl _ _ _ impossible
 
-  compIfExp : (p : (a || b || c) = False) -> (cond : Exp a Bool) ->(x : Exp b ty) -> (y : Exp c ty) -> (co : Code ((Val ty) :: s) s') -> Code s s'
+  compIfExp : (p : (a || b || c) = False) -> (cond : Exp a BoolTy) ->(x : Exp b ty) -> (y : Exp c ty) -> (co : Code ((Val ty) :: s) s') -> Code s s'
   compIfExp {a = False} {b = False} {c = False} Refl cond x y co =
      comp Refl cond (IF (comp Refl x co) (comp Refl y co))
   compIfExp {a = False} {b = False} {c = True} Refl _ _ _ _ impossible
@@ -105,7 +106,7 @@ mutual
   comp p (CatchExp x h) c = compCatchExp p x h c
   comp Refl ThrowExp _ impossible
 
-compile : (b = False) -> Exp b ty -> Code s (Val ty :: s)   -- TODO: beware of the [] (it was s)
+compile : (b = False) -> Exp b ty -> Code s (Val ty :: s)
 compile p e = comp p e HALT
 
 data Stack : (s : StackType) -> Type where
@@ -149,27 +150,27 @@ checkAll : List (Exp False tyExp, V tyExp) -> Bool
 checkAll [] = True
 checkAll ((e, r) :: xs) = (testExp Refl e r) && checkAll xs
 
-e1 : Exp False Nat
+e1 : Exp False NatTy
 e1 = CatchExp ThrowExp (PlusExp (SingleExp (VNat 2)) (SingleExp (VNat 3)))
-r1 : V Nat
+r1 : V NatTy
 r1 = VNat 5
 
-e2 : Exp False Nat
+e2 : Exp False NatTy
 e2 = CatchExp (PlusExp (SingleExp (VNat 60)) ThrowExp)
               (SingleExp (VNat 30))
-r2 : V Nat
+r2 : V NatTy
 r2 = VNat 30
 
-e3 : Exp False Nat
+e3 : Exp False NatTy
 e3 = SingleExp (VNat 3)
-r3 : V Nat
+r3 : V NatTy
 r3 = VNat 3
 
 -- checkAll [(e1, r1), (e2, r2), (e3, r3)]
 
 ---
-s : Stack [Val Nat]
+s : Stack [Val NatTy]
 s = 123 :: Nil
 
-t : Stack[Val Bool, Val Nat]
+t : Stack[Val BoolTy, Val NatTy]
 t = False :: s
