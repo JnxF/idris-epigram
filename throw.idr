@@ -37,124 +37,94 @@ data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
   ThrowExp : Exp True t l
   CatchExp : (x : Exp a t l) -> (h : Exp b t l) -> Exp (a && b) t l
 
-{-}
-data Program : List (VariableId, TyExp, ) -> Type where
-  EmptyProgram : Program []
-  Statement : (id : VariableId) -> (exp : Exp b t env) ->
-              (previous : Program env) ->
-              {auto p : b = False} ->
-              Program ((id, t) :: env)
--}
-{- Working code -}
 
 data Program : List (VariableId, TyExp) -> Type where
   EmptyProgram : Program []
-  Statement : (id : VariableId) -> (exp : Exp b t env) ->
+  Statement : (statement : (VariableId, Exp b t env)) ->
               (previous : Program env) ->
-              {auto p : b = False} ->                -- The expression cannot throw exp
-              Program ((id, t) :: env)
+              {auto p : b = False} ->
+              Program ((fst statement, t) :: env)
 
-data ValuesEnv : List TyExp -> Type where
-  Nil : ValuesEnv []
-  (::) : (VariableId, V t) -> ValuesEnv v -> ValuesEnv (t :: v)
-
+data DecoratedType : List (VariableId, TyExp) -> Type where
+  NoVariables : DecoratedType []
+  JoinVariable : (V t) -> (id : VariableId) -> (prf: DecoratedType xs) -> DecoratedType ((id, t) :: xs)
 
 mutual
+    findVariable : (p : False = False) -> (myProof : ElemFirstComponent id tEnv) -> (env : DecoratedType tEnv) -> V (findType id tEnv myProof)
+    findVariable p Here (JoinVariable x id prf) = x
+    findVariable p (There later) (JoinVariable x id prf) = findVariable p later prf
+
+    evalPlusExp : (x : Exp a NatTy tEnv) -> (y : Exp b NatTy tEnv) -> (env : DecoratedType tEnv) ->  (p : (a || (Delay b)) = False) -> V NatTy
+    evalPlusExp x y env p {a = False} {b = False} =
+      case eval x env of
+            (VNat x') => case eval y env of
+                               (VNat y') => VNat (x' + y')
+    evalPlusExp _ _ _ Refl {a = False} {b = True} impossible
+    evalPlusExp _ _ _ Refl {a = True} {b = _} impossible
+
+    evalIfExp : (cond : Exp a BoolTy tEnv) -> (x : Exp b t tEnv) -> (y : Exp c t tEnv) -> (env : DecoratedType tEnv) ->   (p : (a || (Delay (b || (Delay c)))) = False) -> V t
+    evalIfExp cond x y env p {a = False} {b = False} {c = False} =
+      case eval cond env of
+            VBool False => eval x env
+            VBool True => eval y env
+    evalIfExp _ _ _ _ Refl {a = False} {b = False} {c = True} impossible
+    evalIfExp _ _ _ _ Refl {a = False} {b = True} {c = _} impossible
+    evalIfExp _ _ _ _ Refl {a = True} {b = _} {c = _} impossible
+
+    evalCatchExp : (x : Exp a t tEnv) -> (h : Exp b t tEnv) -> (env : DecoratedType tEnv) -> (p : (a && (Delay b)) = False) -> V t
+    evalCatchExp x h env p {a = False} {b} = eval x env
+    evalCatchExp x h env p {a = True} {b = False} = eval h env
+    evalCatchExp _ _ _ Refl {a = True} {b = True} impossible
+
+    eval : (e : Exp b t tEnv) -> (env : DecoratedType tEnv) -> {auto p : b = False} -> V t
+    eval (VarExp {p=myProof} id) env {p} = findVariable p myProof env
+    eval (SingleExp v) env = v
+    eval (PlusExp x y) env {p} = evalPlusExp x y env p
+    eval (IfExp cond x y) env {p} = evalIfExp cond x y env p
+    eval ThrowExp _ {p = Refl} impossible
+    eval (CatchExp x h) env {p} = evalCatchExp x h env p
+
+evalProgram : (program : Program envt) -> DecoratedType envt
+evalProgram EmptyProgram = NoVariables
+evalProgram (Statement (id, exp) previous) =
+  let evaluatedPrevious = evalProgram previous in
+  let evaluatedExpresion = eval exp evaluatedPrevious in
+  JoinVariable evaluatedExpresion id evaluatedPrevious
+
 {-
-  evalVarExp : (w : TyExp) -> (id : VariableId) -> (env : ValuesEnv tEnvT) -> Maybe (V w)
-  evalVarExp w id [] = Nothing
-  evalVarExp w id ((id', value) :: y) = ?h_1 -}
-
-  {-evalVarExp id [] = Nothing
-  evalVarExp id ((id', value) :: y) {vEnvT} =
-    if id == id'
-    then ?aaaa
-    else ?hasdasdasdasd -}
-
-  --data EqualEnvironments : List (String, TyExp) -> ValuesEnv vEnvT -> Type where
-  --  EqualEmpty : EqualEnvironments [] []
-  --  EqualRecursive : EqualEnvironments xs ys -> {auto b : V a} -> EqualEnvironments ((id, a) :: xs) ((id, b) :: ys)
-
---  data ListInclusion : (l1 : List (String, TyExp)) -> (l2 : ValuesEnv vEnvT) -> Type where
---   EmptyList : ListInclusion [] _
-  -- RecursiveInclusion : ElemFirstComponent x l -> ListInclusion xs l -> ListInclusion (x :: xs) l
-
-  eval : (e : Exp b t tEnv) -> (env : ValuesEnv vEnvT) -> {auto p : b = False} -> V t
-  eval (VarExp id) env = ?h--case (evalVarExp id env) of
-                            --Just v => v
-                            --Nothing => ?h
-  eval (SingleExp v) env = ?eval_rhs_2
-  eval (PlusExp x y) env = ?eval_rhs_3
-  eval (IfExp cond x y) env = ?eval_rhs_4
-  eval ThrowExp _ {p = Refl} impossible
-  eval (CatchExp x h) env = ?eval_rhs_6
-
-{-
-evalProgram : ValuesEnv envT
-              -> (p : Program l)
-              -> ValuesEnv $ case p of EmptyProgram => envT
-                                       Statement id {t} exp previous => t :: envT
-evalProgram env EmptyProgram = env
-evalProgram env (Statement id exp previous) =
-  let evaluatedPreviousEnv = evalProgram env previous in
-  let evaluatedExp = eval exp evaluatedPreviousEnv in
-  ?t
+var x = 0;
+var y = 42;
+var z = 17;
+x = x + y + z;
 -}
 
-extractSecond : List (a, b) -> List (b)
-extractSecond [] = []
-extractSecond ((x, y) :: xs) = y :: extractSecond xs
+xEqualsZero : Program [("x", NatTy)]
+xEqualsZero = Statement ("x", SingleExp (VNat 0)) EmptyProgram
 
-evalProgram : (pa : Program envt) -> ValuesEnv ((case pa of
-                                                  EmptyProgram => []
-                                                  (Statement id {t} exp {env} previous) => t :: (extractSecond env)))
-evalProgram EmptyProgram = []
-evalProgram (Statement id exp previous) =
-  let evaluatedPreviousEnv = evalProgram previous in
-  let evaluatedExp = eval exp evaluatedPreviousEnv in
-  (id, evaluatedExp) :: ?asdadas1
+yEqualsFortyTwo : Program [("y", NatTy), ("x", NatTy)]
+yEqualsFortyTwo = Statement ("y", SingleExp (VNat 42)) xEqualsZero
 
+zEquals17 : Program [("z", NatTy), ("y", NatTy), ("x", NatTy)]
+zEquals17 = Statement ("z", SingleExp (VNat 17)) yEqualsFortyTwo
 
+xEqualsSum : Program [("x", NatTy), ("z", NatTy), ("y", NatTy), ("x", NatTy)]
+xEqualsSum = Statement ("x", PlusExp (PlusExp (VarExp "x") (VarExp "y")) (VarExp "z")) zEquals17
 
-{-evalProgram env EmptyProgram = env
-evalProgram env (Statement id exp previous) =
-  let evaluatedPreviousEnv = evalProgram env previous in
-  let evaluatedExp = eval exp evaluatedPreviousEnv in
-  (id, evaluatedExp) :: evaluatedPreviousEnv -}
-
-
-
-
-{-
 mutual
-  evalPlusExp : (p : (a || (Delay b)) = False) -> (x : Exp a NatTy) -> (y : Exp b NatTy) -> V NatTy
-  evalPlusExp {a = False} {b = False} p x y =
-    case eval Refl x of
-          VNat x' => case eval Refl y of
-                             VNat y' => VNat (x' + y')
-  evalPlusExp {a = True} {b = _} Refl _ _ impossible
-  evalPlusExp {a = False} {b = True} Refl _ _ impossible
+  debugL : DecoratedType envt -> List String
+  debugL NoVariables = []
+  debugL (JoinVariable x id prf) = case x of
+    (VNat v) => (id ++ " <- " ++ show v) :: debugL prf
+    (VBool v) => (id ++ " <- " ++ show v) :: debugL prf
 
-  evalIfExp : (p : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> V t
-  evalIfExp {a = False} {b = False} {c = False} p cond x y =
-    case eval Refl cond of
-      VBool True => eval Refl x
-      VBool False => eval Refl y
-  evalIfExp {a = False} {b = False} {c = True} Refl _ _ _ impossible
-  evalIfExp {a = False} {b = True} {c = _} Refl _ _ _ impossible
-  evalIfExp {a = True} {b = _} {c = _} Refl _ _ _ impossible
+  debugP : List String -> IO ()
+  debugP [] = pure ()
+  debugP (x :: xs) = do putStrLn x
+                        debugP xs
 
-  evalCatchExp : (p : (a && (Delay b)) = False) -> (x : Exp a t) -> (h : Exp b t) -> V t
-  evalCatchExp {a = False} {b} p x h = eval Refl x
-  evalCatchExp {a = True} {b = False} p x h = eval Refl h
-  evalCatchExp {a = True} {b = True} Refl _ _ impossible
+  debug : (p : Program t) -> IO ()
+  debug p = debugP (reverse $ debugL (evalProgram p))
 
-  eval : (b = False) -> Exp b t -> V t
-  eval p (SingleExp v) = v
-  eval p (PlusExp x y) = evalPlusExp p x y
-  eval p (IfExp cond x y) = evalIfExp p cond x y
-  eval Refl ThrowExp impossible
-  eval p (CatchExp x h) = evalCatchExp p x h
 
 mutual
   El : Ty -> Type
@@ -171,8 +141,12 @@ mutual
     UNMARK : Code (t :: s) s' -> Code (t :: (Han s s') :: s) s'
     HALT : Code s s
 
+
+
+{-
 --comp?
-compCatch : Exp b ty -> Code (Val ty :: (s'' ++ (Han s s') :: s)) s' -> Code (s'' ++ (Han s s') :: s) s'
+compCatch : Exp b ty env -> Code (Val ty :: (s'' ++ (Han s s') :: s)) s' -> Code (s'' ++ (Han s s') :: s) s'
+compCatch (VarExp id) c = ?compCatch_rhs_1
 compCatch (SingleExp v) c = PUSH v c
 compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val NatTy :: _} y (ADD c))
 compCatch {s} {s''} (IfExp cond x y) c = compCatch cond (IF (compCatch x c) (compCatch y c))
