@@ -1,3 +1,5 @@
+import Data.List
+
 %default total
 
 data TyExp = NatTy | BoolTy
@@ -16,14 +18,114 @@ Eq (V t) where
   (==) (VNat x) (VNat y) = x == y
   (==) (VBool x) (VBool y) = x == y
 
-data Exp : Bool -> TyExp -> Type where
-  SingleExp : (v : V t) -> Exp False t
-  PlusExp : (x : Exp a NatTy) -> (y : Exp b NatTy) -> Exp (a || b) NatTy
-  IfExp : (cond : Exp a BoolTy) -> (x : Exp b t) -> (y : Exp c t) -> Exp (a || b || c) t
-  ThrowExp : Exp True t
-  CatchExp : (x : Exp a t) -> (h : Exp b t) -> Exp (a && b) t
+VariableId : Type
+VariableId = String
+
+data ElemFirstComponent : a -> List (a, b) -> Type where
+   Here : ElemFirstComponent x ((x, _) :: xs)
+   There : (later : ElemFirstComponent x xs) -> ElemFirstComponent x (y :: xs)
+
+findType : (id : VariableId) -> (l: List (VariableId, TyExp)) -> (p : ElemFirstComponent id l) -> TyExp
+findType id ((id, ty) :: xs) Here = ty
+findType id (_ :: xs) (There later) = findType id xs later
+
+data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
+  VarExp : (id : VariableId) -> {auto p : ElemFirstComponent id l} -> Exp False (findType id l p) l
+  SingleExp : (v : V t) -> Exp False t l
+  PlusExp : (x : Exp a NatTy l) -> (y : Exp b NatTy l) -> Exp (a || b) NatTy l
+  IfExp : (cond : Exp a BoolTy l) -> (x : Exp b t l) -> (y : Exp c t l) -> Exp (a || b || c) t l
+  ThrowExp : Exp True t l
+  CatchExp : (x : Exp a t l) -> (h : Exp b t l) -> Exp (a && b) t l
+
+{-}
+data Program : List (VariableId, TyExp, ) -> Type where
+  EmptyProgram : Program []
+  Statement : (id : VariableId) -> (exp : Exp b t env) ->
+              (previous : Program env) ->
+              {auto p : b = False} ->
+              Program ((id, t) :: env)
+-}
+{- Working code -}
+
+data Program : List (VariableId, TyExp) -> Type where
+  EmptyProgram : Program []
+  Statement : (id : VariableId) -> (exp : Exp b t env) ->
+              (previous : Program env) ->
+              {auto p : b = False} ->                -- The expression cannot throw exp
+              Program ((id, t) :: env)
+
+data ValuesEnv : List TyExp -> Type where
+  Nil : ValuesEnv []
+  (::) : (VariableId, V t) -> ValuesEnv v -> ValuesEnv (t :: v)
 
 
+mutual
+{-
+  evalVarExp : (w : TyExp) -> (id : VariableId) -> (env : ValuesEnv tEnvT) -> Maybe (V w)
+  evalVarExp w id [] = Nothing
+  evalVarExp w id ((id', value) :: y) = ?h_1 -}
+
+  {-evalVarExp id [] = Nothing
+  evalVarExp id ((id', value) :: y) {vEnvT} =
+    if id == id'
+    then ?aaaa
+    else ?hasdasdasdasd -}
+
+  --data EqualEnvironments : List (String, TyExp) -> ValuesEnv vEnvT -> Type where
+  --  EqualEmpty : EqualEnvironments [] []
+  --  EqualRecursive : EqualEnvironments xs ys -> {auto b : V a} -> EqualEnvironments ((id, a) :: xs) ((id, b) :: ys)
+
+--  data ListInclusion : (l1 : List (String, TyExp)) -> (l2 : ValuesEnv vEnvT) -> Type where
+--   EmptyList : ListInclusion [] _
+  -- RecursiveInclusion : ElemFirstComponent x l -> ListInclusion xs l -> ListInclusion (x :: xs) l
+
+  eval : (e : Exp b t tEnv) -> (env : ValuesEnv vEnvT) -> {auto p : b = False} -> V t
+  eval (VarExp id) env = ?h--case (evalVarExp id env) of
+                            --Just v => v
+                            --Nothing => ?h
+  eval (SingleExp v) env = ?eval_rhs_2
+  eval (PlusExp x y) env = ?eval_rhs_3
+  eval (IfExp cond x y) env = ?eval_rhs_4
+  eval ThrowExp _ {p = Refl} impossible
+  eval (CatchExp x h) env = ?eval_rhs_6
+
+{-
+evalProgram : ValuesEnv envT
+              -> (p : Program l)
+              -> ValuesEnv $ case p of EmptyProgram => envT
+                                       Statement id {t} exp previous => t :: envT
+evalProgram env EmptyProgram = env
+evalProgram env (Statement id exp previous) =
+  let evaluatedPreviousEnv = evalProgram env previous in
+  let evaluatedExp = eval exp evaluatedPreviousEnv in
+  ?t
+-}
+
+extractSecond : List (a, b) -> List (b)
+extractSecond [] = []
+extractSecond ((x, y) :: xs) = y :: extractSecond xs
+
+evalProgram : (pa : Program envt) -> ValuesEnv ((case pa of
+                                                  EmptyProgram => []
+                                                  (Statement id {t} exp {env} previous) => t :: (extractSecond env)))
+evalProgram EmptyProgram = []
+evalProgram (Statement id exp previous) =
+  let evaluatedPreviousEnv = evalProgram previous in
+  let evaluatedExp = eval exp evaluatedPreviousEnv in
+  (id, evaluatedExp) :: ?asdadas1
+
+
+
+{-evalProgram env EmptyProgram = env
+evalProgram env (Statement id exp previous) =
+  let evaluatedPreviousEnv = evalProgram env previous in
+  let evaluatedExp = eval exp evaluatedPreviousEnv in
+  (id, evaluatedExp) :: evaluatedPreviousEnv -}
+
+
+
+
+{-
 mutual
   evalPlusExp : (p : (a || (Delay b)) = False) -> (x : Exp a NatTy) -> (y : Exp b NatTy) -> V NatTy
   evalPlusExp {a = False} {b = False} p x y =
@@ -174,3 +276,4 @@ s = 123 :: Nil
 
 t : Stack[Val BoolTy, Val NatTy]
 t = False :: s
+-}
