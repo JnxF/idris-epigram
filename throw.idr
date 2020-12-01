@@ -45,16 +45,16 @@ data Program : List (VariableId, TyExp) -> Type where
               {auto p : b = False} ->
               Program ((fst statement, t) :: env)
 
-data DecoratedType : List (VariableId, TyExp) -> Type where
-  NoVariables : DecoratedType []
-  JoinVariable : (V t) -> (id : VariableId) -> (prf: DecoratedType xs) -> DecoratedType ((id, t) :: xs)
+data Trace : List (VariableId, TyExp) -> Type where
+  EmptyTrace : Trace []
+  TraceStep : (V t) -> (id : VariableId) -> (prf: Trace xs) -> Trace ((id, t) :: xs)
 
 mutual
-    findVariable : (p : False = False) -> (myProof : ElemFirstComponent id tEnv) -> (env : DecoratedType tEnv) -> V (findType id tEnv myProof)
-    findVariable p Here (JoinVariable x id prf) = x
-    findVariable p (There later) (JoinVariable x id prf) = findVariable p later prf
+    findVariable : (p : False = False) -> (myProof : ElemFirstComponent id tEnv) -> (env : Trace tEnv) -> V (findType id tEnv myProof)
+    findVariable p Here (TraceStep x id prf) = x
+    findVariable p (There later) (TraceStep x id prf) = findVariable p later prf
 
-    evalPlusExp : (x : Exp a NatTy tEnv) -> (y : Exp b NatTy tEnv) -> (env : DecoratedType tEnv) ->  (p : (a || (Delay b)) = False) -> V NatTy
+    evalPlusExp : (x : Exp a NatTy tEnv) -> (y : Exp b NatTy tEnv) -> (env : Trace tEnv) ->  (p : (a || (Delay b)) = False) -> V NatTy
     evalPlusExp x y env p {a = False} {b = False} =
       case eval x env of
             (VNat x') => case eval y env of
@@ -62,21 +62,21 @@ mutual
     evalPlusExp _ _ _ Refl {a = False} {b = True} impossible
     evalPlusExp _ _ _ Refl {a = True} {b = _} impossible
 
-    evalIfExp : (cond : Exp a BoolTy tEnv) -> (x : Exp b t tEnv) -> (y : Exp c t tEnv) -> (env : DecoratedType tEnv) ->   (p : (a || (Delay (b || (Delay c)))) = False) -> V t
+    evalIfExp : (cond : Exp a BoolTy tEnv) -> (x : Exp b t tEnv) -> (y : Exp c t tEnv) -> (env : Trace tEnv) ->   (p : (a || (Delay (b || (Delay c)))) = False) -> V t
     evalIfExp cond x y env p {a = False} {b = False} {c = False} =
       case eval cond env of
-            VBool False => eval x env
-            VBool True => eval y env
+            VBool True => eval x env
+            VBool False => eval y env
     evalIfExp _ _ _ _ Refl {a = False} {b = False} {c = True} impossible
     evalIfExp _ _ _ _ Refl {a = False} {b = True} {c = _} impossible
     evalIfExp _ _ _ _ Refl {a = True} {b = _} {c = _} impossible
 
-    evalCatchExp : (x : Exp a t tEnv) -> (h : Exp b t tEnv) -> (env : DecoratedType tEnv) -> (p : (a && (Delay b)) = False) -> V t
+    evalCatchExp : (x : Exp a t tEnv) -> (h : Exp b t tEnv) -> (env : Trace tEnv) -> (p : (a && (Delay b)) = False) -> V t
     evalCatchExp x h env p {a = False} {b} = eval x env
     evalCatchExp x h env p {a = True} {b = False} = eval h env
     evalCatchExp _ _ _ Refl {a = True} {b = True} impossible
 
-    eval : (e : Exp b t tEnv) -> (env : DecoratedType tEnv) -> {auto p : b = False} -> V t
+    eval : (e : Exp b t tEnv) -> (env : Trace tEnv) -> {auto p : b = False} -> V t
     eval (VarExp {p=myProof} id) env {p} = findVariable p myProof env
     eval (SingleExp v) env = v
     eval (PlusExp x y) env {p} = evalPlusExp x y env p
@@ -84,12 +84,12 @@ mutual
     eval ThrowExp _ {p = Refl} impossible
     eval (CatchExp x h) env {p} = evalCatchExp x h env p
 
-evalProgram : (program : Program envt) -> DecoratedType envt
-evalProgram EmptyProgram = NoVariables
+evalProgram : (program : Program envt) -> Trace envt
+evalProgram EmptyProgram = EmptyTrace
 evalProgram (Statement (id, exp) previous) =
   let evaluatedPrevious = evalProgram previous in
   let evaluatedExpresion = eval exp evaluatedPrevious in
-  JoinVariable evaluatedExpresion id evaluatedPrevious
+  TraceStep evaluatedExpresion id evaluatedPrevious
 
 {-
 var x = 0;
@@ -111,9 +111,9 @@ xEqualsSum : Program [("x", NatTy), ("z", NatTy), ("y", NatTy), ("x", NatTy)]
 xEqualsSum = Statement ("x", PlusExp (PlusExp (VarExp "x") (VarExp "y")) (VarExp "z")) zEquals17
 
 mutual
-  debugL : DecoratedType envt -> List String
-  debugL NoVariables = []
-  debugL (JoinVariable x id prf) = case x of
+  debugL : Trace envt -> List String
+  debugL EmptyTrace = []
+  debugL (TraceStep x id prf) = case x of
     (VNat v) => (id ++ " <- " ++ show v) :: debugL prf
     (VBool v) => (id ++ " <- " ++ show v) :: debugL prf
 
