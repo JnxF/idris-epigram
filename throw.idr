@@ -37,17 +37,121 @@ data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
   ThrowExp : Exp True t l
   CatchExp : (x : Exp a t l) -> (h : Exp b t l) -> Exp (a && b) t l
 
-
 data Program : List (VariableId, TyExp) -> Type where
-  EmptyProgram : Program []
-  Statement : (statement : (VariableId, Exp b t env)) ->
-              (previous : Program env) ->
-              {auto p : b = False} ->
-              Program ((fst statement, t) :: env)
+  EmptyProgram : Program env
 
-data Trace : List (VariableId, TyExp) -> Type where
+  Declaration : (vId : VariableId) ->
+                (exp : Exp b t env) ->
+                {auto expExecutable : b = False} ->
+                (continuing : Program ((vId, t) :: env)) ->
+                (Program env)
+
+  Assignment : (vId : VariableId) ->
+               (exp : Exp b t env) ->
+               {auto expExecutable : b = False} ->
+               (continuing : Program ((vId, t) :: env)) ->
+               {auto prf' : Elem (vId, t) env} ->
+               (Program env)
+
+{-
+x<- 3;        -- [x <- 3]
+x<- x+1       -- [x <- 4]
+y<- x+2       -- [x <- 4, y <- 2]
+-}
+
+myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+myEmpty = EmptyProgram
+
+yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)]
+yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
+
+xEqualsXPlusOne : Program [("x", NatTy)]
+xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
+
+xEquals3 : Program []
+xEquals3 = Declaration "x" (SingleExp (VNat 1)) xEqualsXPlusOne
+
+{- TypesEnv: Type
+TypesEnv = List (VariableId, TyExp) -}
+
+
+data ValuesEnv : List (VariableId, TyExp) -> Type where
+   EmptyValuesEnv : ValuesEnv []
+   MoreValuesEnv : (id: VariableId) -> V ty -> ValuesEnv envTy
+                   -> ValuesEnv ((id, ty) :: envTy)
+
+
+--eval : (e : Exp b t tEnv) -> (ValuesEnv tEnv) -> {auto p : b = False} -> V t
+
+
+mutual
+  evalProgram : (p : Program env) -> (valueEnv : ValuesEnv env) -> ValuesEnv ((vId, t) :: env)
+  evalProgram EmptyProgram valueEnv = ?asdasdasd
+  evalProgram (Declaration vId exp continuing {expExecutable}) valueEnv = ?asdasd
+    -- evalProgram continuing (MoreValuesEnv vId (eval exp valueEnv) valueEnv)
+    -- x <- 1
+    -- (vId, evaluated expression ) :: (recursive call on continuing)
+  evalProgram (Assignment vId exp continuing) valueEnv = ?evalProgram_rhs_3
+
+
+{-
+evalProgram EmptyProgram x = EmptyValuesEnv
+evalProgram (Declaration vId exp continuing) valueEnv =
+  let evaluatedExp = (eval exp valueEnv) in
+  MoreValuesEnv vId evaluatedExp (evalProgram ?asdasd ?asdasd)
+evalProgram (Assignment vId exp continuing) valueEnv =
+  let evaluatedExp = (eval exp valueEnv) in
+  MoreValuesEnv vId evaluatedExp ?qqqq
+-}
+--evalProgram EmptyProgram y = y
+--evalProgram (Declaration vId exp continuing) valueEnv =
+--  let evaluatedExp = (eval exp valueEnv) in
+--  let ta = MoreValuesEnv vId evaluatedExp (evalProgram continuing valueEnv)  in
+
+  -- (vId, evaluate exp) :: evalProgram .....
+
+  --MoreValuesEnv vId (eval exp valueEnv) (evalProgram continuing)
+-- evalProgram (Assignment vId exp continuing) valueEnv = ?evalProgram_rhs_3
+
+
+types : (p : Program env) -> List (VariableId, TyExp)
+types EmptyProgram = []
+types (Declaration vId exp {t} continuing) = (vId, t) :: types continuing
+types (Assignment vId exp {t} continuing) = (vId, t) :: types continuing
+
+{-
+eval : (e : Exp b t tEnv) -> {auto p : b = False} -> V t
+
+
+
+data Result : List (VariableId, TyExp) -> Type where
+  EmptyResult : Result []
+  ContinuingResult : (V t) -> (vId : VariableId) -> Result xs -> Result ((vId, t) :: xs)
+
+evalProgram : (p : Program env) -> Result (types(p))
+evalProgram EmptyProgram = EmptyResult
+evalProgram (Declaration vId exp {b = False} continuing) = ContinuingResult (eval exp) vId (evalProgram continuing)
+evalProgram (Declaration vId exp {b = True} continuing) = ?asdasd_2 --
+evalProgram (Assignment vId exp {b = False} continuing ) = ContinuingResult (eval exp) vId (evalProgram continuing)
+evalProgram (Assignment vId exp {b = True} continuing) = ?evalProgram_rhs_2
+-}
+
+{-
+data Trace : List (String, TyExp) -> Type where
   EmptyTrace : Trace []
   TraceStep : (V t) -> (id : VariableId) -> (prf: Trace xs) -> Trace ((id, t) :: xs)
+
+evalProgram : (p : Program env ts) -> Type
+evalProgram p {ts} = ?evalProgram_rhs
+-}
+{-
+evalProgram : (p : Program env) -> Trace p
+evalProgram EmptyProgram = []
+evalProgram (Declaration vId exp y) = ?evalProgram_rhs_2
+evalProgram (Assignment vId exp x) = ?evalProgram_rhs_3
+-}
+
+{-
 
 mutual
     findVariable : (p : False = False) -> (myProof : ElemFirstComponent id tEnv) -> (env : Trace tEnv) -> V (findType id tEnv myProof)
@@ -90,40 +194,13 @@ evalProgram (Statement (id, exp) previous) =
   let evaluatedPrevious = evalProgram previous in
   let evaluatedExpresion = eval exp evaluatedPrevious in
   TraceStep evaluatedExpresion id evaluatedPrevious
-
+-}
 {-
 var x = 0;
 var y = 42;
 var z = 17;
 x = x + y + z;
 -}
-
-xEqualsZero : Program [("x", NatTy)]
-xEqualsZero = Statement ("x", SingleExp (VNat 0)) EmptyProgram
-
-yEqualsFortyTwo : Program [("y", NatTy), ("x", NatTy)]
-yEqualsFortyTwo = Statement ("y", SingleExp (VNat 42)) xEqualsZero
-
-zEquals17 : Program [("z", NatTy), ("y", NatTy), ("x", NatTy)]
-zEquals17 = Statement ("z", SingleExp (VNat 17)) yEqualsFortyTwo
-
-xEqualsSum : Program [("x", NatTy), ("z", NatTy), ("y", NatTy), ("x", NatTy)]
-xEqualsSum = Statement ("x", PlusExp (PlusExp (VarExp "x") (VarExp "y")) (VarExp "z")) zEquals17
-
-mutual
-  debugL : Trace envt -> List String
-  debugL EmptyTrace = []
-  debugL (TraceStep x id prf) = case x of
-    (VNat v) => (id ++ " <- " ++ show v) :: debugL prf
-    (VBool v) => (id ++ " <- " ++ show v) :: debugL prf
-
-  debugP : List String -> IO ()
-  debugP [] = pure ()
-  debugP (x :: xs) = do putStrLn x
-                        debugP xs
-
-  debug : (p : Program t) -> IO ()
-  debug p = debugP (reverse $ debugL (evalProgram p))
 
 
 mutual
