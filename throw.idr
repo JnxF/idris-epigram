@@ -4,11 +4,19 @@ import Data.List
 
 data TyExp = NatTy | BoolTy
 
+VariableId : Type
+VariableId = String
+
 mutual
   StackType : Type
   StackType = List Ty
 
-  data Ty = Han StackType StackType | Val TyExp
+  HeapType : Type
+  HeapType = List (VariableId, TyExp)
+
+  data Ty = Han StackType StackType HeapType HeapType | Val TyExp
+
+
 
 data V : TyExp -> Type where
   VNat : Nat -> V NatTy
@@ -18,8 +26,7 @@ Eq (V t) where
   (==) (VNat x) (VNat y) = x == y
   (==) (VBool x) (VBool y) = x == y
 
-VariableId : Type
-VariableId = String
+
 
 data ElemFirstComponent : a -> List (a, b) -> Type where
    Here : ElemFirstComponent x ((x, _) :: xs)
@@ -130,99 +137,158 @@ evalProgram p = evPro p EmptyValuesEnv
 
 mutual
   El : Ty -> Type
-  El (Han t t') = Code t t'
+  El (Han t t' h h') = Code t t' h h'
   El (Val NatTy) = Nat
   El (Val BoolTy) = Bool
 
-  data Code : (s : StackType) -> (s' : StackType) -> Type where
-    PUSH : V tyExp -> Code (Val tyExp :: s) s' -> Code s s'
-    ADD : Code (Val NatTy :: s) s' -> Code (Val NatTy :: Val NatTy :: s) s'
-    IF : (c1 : Code s s') -> (c2 : Code s s') -> Code (Val BoolTy :: s) s'
-    THROW : Code (s'' ++ (Han s s') :: s) s'
-    MARK : (h : Code s s') -> (c : Code ((Han s s') :: s) s') -> Code s s'
-    UNMARK : Code (t :: s) s' -> Code (t :: (Han s s') :: s) s'
-    HALT : Code s s
+  data Code : (s : StackType) -> (s' : StackType) -> (h: HeapType) -> (h': HeapType) -> Type where
+    STORE : (vId: VariableId) -> (c: Code s s' ((vId, ty)::h) h') -> Code ((Val ty)::s) s' h h'
+    LOAD : (vId: VariableId) -> {auto prf: ElemFirstComponent vId h} -> (c: Code (Val (findType vId h prf)::s) s' h h') -> Code s s' h h'
+    PUSH : V tyExp -> Code (Val tyExp :: s) s' h h' -> Code s s' h h'
+    ADD : Code (Val NatTy :: s) s' h h' -> Code (Val NatTy :: Val NatTy :: s) s' h h'
+    IF : (c1 : Code s s' h h') -> (c2 : Code s s' h h') -> Code (Val BoolTy :: s) s' h h'
+    THROW : Code (s'' ++ (Han s s' h h') :: s) s' h h'
+    MARK : (han : Code s s' h h') -> (c : Code ((Han s s' h h') :: s) s' h h') -> Code s s' h h'
+    UNMARK : Code (t :: s) s' h h' -> Code (t :: (Han s s' h h') :: s) s' h h'
+    HALT : Code s s h h
+
+
+-- mutual
+  -- compCatchVarExp : (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: (s'' ++ ((Han s s') :: s))) s') -> Code (s'' ++ ((Han s s') :: s)) s'
+  -- compCatchVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
+  -- compCatchVarExp (MoreValuesEnv _ _ y) (There later) c = compCatchVarExp y later c
+  --
+  -- compCatch : (exp : Exp b ty env) -> (c : Code (Val ty :: (s'' ++ (Han s s') :: s)) s') -> Code (s'' ++ (Han s s') :: s) s'
+  -- compCatch (VarExp vId {p}) valueEnv c = compCatchVarExp valueEnv p c
+  -- compCatch (SingleExp v) valueEnv c = PUSH v c
+  -- compCatch (PlusExp x y) valueEnv c =
+  --   compCatch x valueEnv (compCatch {s'' = Val NatTy :: _} y valueEnv (ADD c))
+  -- compCatch (IfExp cond x y) valueEnv c =
+  --   compCatch cond valueEnv (IF (compCatch x valueEnv c) (compCatch y valueEnv c))
+  -- compCatch ThrowExp valueEnv c = THROW
+  -- compCatch (CatchExp x h) valueEnv c =
+  --   MARK (compCatch h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
+  --
+  -- compPlusExp : (prf : (a || (Delay b)) = False) -> (x : Exp a NatTy env) ->  (y : Exp b NatTy env) -> (c : Code ((Val NatTy) :: s) s')  -> Code s s'
+  -- compPlusExp prf x y valueEnv c {a = False} {b = False} =
+  --   (comp Refl x valueEnv (comp Refl y valueEnv (ADD c)))
+  -- compPlusExp Refl _ _ _ _ {a = False} {b = True} impossible
+  -- compPlusExp Refl _ _ _ _ {a = True} {b = _} impossible
+  --
+  -- compIfExp :
+  --   (prf : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy env) ->
+  --   (x : Exp b ty env) -> (y : Exp c ty env) ->
+  --   (co : Code ((Val ty) :: s) s') -> Code s s'
+  -- compIfExp prf cond x y valueEnv co {a = False} {b = False} {c = False} =
+  --   comp Refl cond valueEnv (IF (comp Refl x valueEnv co) (comp Refl y valueEnv co))
+  -- compIfExp Refl _ _ _ _ _ {a = False} {b = False} {c = True} impossible
+  -- compIfExp Refl _ _ _ _ _ {a = False} {b = True} {c = _} impossible
+  -- compIfExp Refl _ _ _ _ _ {a = True} {b = _} {c = _} impossible
+  --
+  -- compCatchExp :
+  --   (prf : (a && (Delay b)) = False) -> (x : Exp a ty env) -> (h : Exp b ty env) -> (c : Code ((Val ty) :: s) s') -> Code s s'
+  -- compCatchExp prf x h valueEnv c {a = False} =
+  --   comp Refl x valueEnv c
+  -- compCatchExp prf x h valueEnv c {a = True} {b = False} =
+  --   MARK (comp Refl h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
+  -- compCatchExp Refl _ _ _ _ {a = True} {b = True} impossible
+  --
+  -- compVarExp : (valueEnv : ValuesEnv env) -> (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: s) s') -> Code s s'
+  -- compVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
+  -- compVarExp (MoreValuesEnv _ _ y) (There later) c = compVarExp y later c
+  --
+  -- comp : {auto prf : b = False} -> (exp : Exp b ty env) -> Code (Val ty :: s) s' -> Code s s'
+  -- comp prf (VarExp vId {p}) c = LOAD vId c
+  -- comp prf (SingleExp v) c = PUSH v c
+  -- comp prf (PlusExp x y) c = compPlusExp prf x y valueEnv c
+  -- comp prf (IfExp cond x y) co = compIfExp prf cond x y valueEnv co
+  -- comp prf (CatchExp x h) c = compCatchExp prf x h valueEnv c
+  -- comp Refl ThrowExp _ _ impossible
+  --
+  -- compile : (stm : Program [] env') -> Code s (Val ty :: s) h env'
 
 mutual
-  compCatchVarExp : (valueEnv : ValuesEnv env) -> (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: (s'' ++ ((Han s s') :: s))) s') -> Code (s'' ++ ((Han s s') :: s)) s'
-  compCatchVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
-  compCatchVarExp (MoreValuesEnv _ _ y) (There later) c = compCatchVarExp y later c
+  compCatch : Exp b ty tenv -> Code (Val ty :: (s'' ++ (Han s s' tenv h') :: s)) s' tenv h' -> Code (s'' ++ (Han s s' tenv h') :: s) s' tenv h'
+  compCatch (VarExp vId) c = LOAD vId c
+  compCatch (SingleExp v) c = PUSH v c
+  compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val NatTy :: _} y (ADD c))
+  compCatch {s} {s''} (IfExp cond x y) c = compCatch cond (IF (compCatch x c) (compCatch y c))
+  compCatch ThrowExp c = THROW
+  compCatch (CatchExp x h) c = MARK (compCatch h c) (compCatch {s'' = []} x (UNMARK c))
 
-  compCatch : (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> (c : Code (Val ty :: (s'' ++ (Han s s') :: s)) s') -> Code (s'' ++ (Han s s') :: s) s'
-  compCatch (VarExp vId {p}) valueEnv c = compCatchVarExp valueEnv p c
-  compCatch (SingleExp v) valueEnv c = PUSH v c
-  compCatch (PlusExp x y) valueEnv c =
-    compCatch x valueEnv (compCatch {s'' = Val NatTy :: _} y valueEnv (ADD c))
-  compCatch (IfExp cond x y) valueEnv c =
-    compCatch cond valueEnv (IF (compCatch x valueEnv c) (compCatch y valueEnv c))
-  compCatch ThrowExp valueEnv c = THROW
-  compCatch (CatchExp x h) valueEnv c =
-    MARK (compCatch h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
+  compPlusExp : (p : (a || b) = False) -> (x : Exp a NatTy tenv) ->  (y : Exp b NatTy tenv) -> (c : Code ((Val NatTy) :: s) s' tenv h') -> Code s s' tenv h'
+  compPlusExp {a = False} {b = False} Refl x y c = comp Refl x (comp Refl y (ADD c))
+  compPlusExp {a = False} {b = True} Refl _ _ _ impossible
+  compPlusExp {a = True} {b = _} Refl _ _ _ impossible
 
-  compPlusExp : (prf : (a || (Delay b)) = False) -> (x : Exp a NatTy env) ->  (y : Exp b NatTy env) -> (valueEnv : ValuesEnv env) -> (c : Code ((Val NatTy) :: s) s')  -> Code s s'
-  compPlusExp prf x y valueEnv c {a = False} {b = False} =
-    (comp Refl x valueEnv (comp Refl y valueEnv (ADD c)))
-  compPlusExp Refl _ _ _ _ {a = False} {b = True} impossible
-  compPlusExp Refl _ _ _ _ {a = True} {b = _} impossible
+  compCatchExp : (p : (a && b) = False) -> (x : Exp a ty tenv) -> (handler : Exp b ty tenv) -> (c : Code ((Val ty) :: s) s' tenv h') -> Code s s' tenv h'
+  compCatchExp {a = False} Refl x handler c = comp Refl x c
+  compCatchExp {a = True} {b = False} p x handler c = MARK (comp Refl handler c) (compCatch {s'' = []} x (UNMARK c))
+  compCatchExp {a = True} {b = True} Refl _ _ _ impossible
 
-  compIfExp :
-    (prf : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy env) ->
-    (x : Exp b ty env) -> (y : Exp c ty env) -> (valueEnv : ValuesEnv env) ->
-    (co : Code ((Val ty) :: s) s') -> Code s s'
-  compIfExp prf cond x y valueEnv co {a = False} {b = False} {c = False} =
-    comp Refl cond valueEnv (IF (comp Refl x valueEnv co) (comp Refl y valueEnv co))
-  compIfExp Refl _ _ _ _ _ {a = False} {b = False} {c = True} impossible
-  compIfExp Refl _ _ _ _ _ {a = False} {b = True} {c = _} impossible
-  compIfExp Refl _ _ _ _ _ {a = True} {b = _} {c = _} impossible
+  compIfExp : (p : (a || b || c) = False) -> (cond : Exp a BoolTy tenv) ->(x : Exp b ty tenv) -> (y : Exp c ty tenv) -> (co : Code ((Val ty) :: s) s' tenv h') -> Code s s' tenv h'
+  compIfExp {a = False} {b = False} {c = False} Refl cond x y co = comp Refl cond (IF (comp Refl x co) (comp Refl y co))
+  compIfExp {a = False} {b = False} {c = True} Refl _ _ _ _ impossible
+  compIfExp {a = False} {b = False} {c = True} Refl _ _ _ _ impossible
+  compIfExp {a = True} Refl _ _ _ _ impossible
 
-  compCatchExp :
-    (prf : (a && (Delay b)) = False) -> (x : Exp a ty env) -> (h : Exp b ty env) ->
-    (valueEnv : ValuesEnv env) -> (c : Code ((Val ty) :: s) s') -> Code s s'
-  compCatchExp prf x h valueEnv c {a = False} =
-    comp Refl x valueEnv c
-  compCatchExp prf x h valueEnv c {a = True} {b = False} =
-    MARK (comp Refl h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
-  compCatchExp Refl _ _ _ _ {a = True} {b = True} impossible
+  comp : (b = False) -> Exp b ty tenv -> Code (Val ty :: s) s' tenv h' -> Code s s' tenv h'
+  comp _ (VarExp {p} vId) {tenv} c = LOAD vId c
+  comp p (SingleExp v) c = PUSH v c
+  comp p (PlusExp x y) c = compPlusExp p x y c
+  comp p (IfExp cond x y) co = compIfExp p cond x y co
+  comp p (CatchExp x h) c = compCatchExp p x h c
+  comp Refl ThrowExp _ impossible
 
-  compVarExp : (valueEnv : ValuesEnv env) -> (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: s) s') -> Code s s'
-  compVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
-  compVarExp (MoreValuesEnv _ _ y) (There later) c = compVarExp y later c
+compile : (prog: Program [] (x::env')) -> ?code
 
-  comp : (prf : b = False) -> (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> Code (Val ty :: s) s' -> Code s s'
-  comp prf (VarExp vId {p}) valueEnv c = compVarExp valueEnv p c
-  comp prf (SingleExp v) valueEnv c = PUSH v c
-  comp prf (PlusExp x y) valueEnv c = compPlusExp prf x y valueEnv c
-  comp prf (IfExp cond x y) valueEnv co = compIfExp prf cond x y valueEnv co
-  comp prf (CatchExp x h) valueEnv c = compCatchExp prf x h valueEnv c
-  comp Refl ThrowExp _ _ impossible
 
-compile : {auto prf : b = False} -> (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> Code s (Val ty :: s)
-compile exp valueEnv {prf = Refl} = comp Refl exp valueEnv HALT
+  --    compile p e = comp p e HALT
 
+
+
+--
 data Stack : (s : StackType) -> Type where
   Nil : Stack []
   (::) : El t -> Stack s -> Stack (t :: s)
 
-top : Stack (t :: s) -> El t
-top (t :: s) = t
-
+data Heap : (h : HeapType) -> Type where
+  HeapNil : Heap []
+  HeapCons : (vId: VariableId) -> V t -> Heap h -> Heap ((vId, t) :: h)
+--
+-- top : Stack (t :: s) -> El t
+-- top (t :: s) = t
+--
 mutual
-  partial
-  exec : Code s s' -> Stack s -> Stack s'
-  exec (PUSH (VNat x) c) s = exec c (x :: s)
-  exec (PUSH (VBool x) c) s = exec c (x :: s)
-  exec (ADD c) (m :: n :: s) = exec c ((n + m) :: s)
-  exec (IF c1 c2) (True :: s) = exec c1 s
-  exec (IF c1 c2) (False :: s) = exec c2 s
-  exec THROW s = fail s
-  exec (MARK h c) s = exec c (h :: s)
-  exec (UNMARK c) (x :: h :: s) = exec c (x :: s)
-  exec HALT s = s
+
+  lookup: (vId: VariableId) -> Stack s -> Heap h -> (p: ElemFirstComponent vId h) -> (c: Code s' s'' h' h'') -> (Stack s', Heap h')
+  lookup vId s (HeapCons vId val tl) Here c = ?lookup_rhs_3
+  lookup vId s (HeapCons _ _ tl) (There later) c = lookup vId s tl later c
+
+
 
   partial
-  fail : Stack (s'' ++ Han s s' :: s) -> Stack s'
-  fail {s'' = []} (h' :: s) = exec h' s
-  fail {s'' = (_ :: _)} (_ :: s) = fail s
+  exec : Code s s' h h' -> Stack s -> Heap h -> (Stack s', Heap h')
+  exec (LOAD {prf} vId c) s h = ?lookup
+            -- case (lookup vId h prf) of
+            --                             VNat x => exec c (x :: s) h
+            --                             VBool x => exec c (x :: s) h
+                                  --
+  --exec (STORE vId c) (x :: s) h = exec c s (HeapCons vId x h)
+  exec (PUSH (VNat x) c) s h = exec c (x :: s) h
+  exec (PUSH (VBool x) c) s h = exec c (x :: s) h
+  exec (ADD c) (m :: n :: s) h = exec c ((n + m) :: s) h
+  exec (IF c1 c2) (True :: s) h = exec c1 s h
+  exec (IF c1 c2) (False :: s) h = exec c2 s h
+  exec THROW s h = fail s h
+  exec (MARK handler c) s h = exec c (handler :: s) h
+  exec (UNMARK c) (x :: handler :: s) h = exec c (x :: s) h
+  exec HALT s h = (s, h)
+
+  partial
+  fail : Stack (s'' ++ Han s s' h h' :: s) -> Heap h -> (Stack s', Heap h')
+  fail {s'' = []} (handler' :: s) h = exec handler' s h
+  fail {s'' = (_ :: _)} (_ :: s) h = fail s h
 
 {-
 partial
