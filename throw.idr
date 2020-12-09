@@ -25,33 +25,33 @@ data ElemFirstComponent : a -> List (a, b) -> Type where
    Here : ElemFirstComponent x ((x, _) :: xs)
    There : (later : ElemFirstComponent x xs) -> ElemFirstComponent x (y :: xs)
 
-findType : (id : VariableId) -> (l: List (VariableId, TyExp)) -> (p : ElemFirstComponent id l) -> TyExp
-findType id ((id, ty) :: xs) Here = ty
-findType id (_ :: xs) (There later) = findType id xs later
+findType : (vId : VariableId) -> (l: List (VariableId, TyExp)) -> (p : ElemFirstComponent vId l) -> TyExp
+findType vId ((vId, ty) :: xs) Here = ty
+findType vId (_ :: xs) (There later) = findType vId xs later
 
 data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
-  VarExp : (id : VariableId) -> {auto p : ElemFirstComponent id l} -> Exp False (findType id l p) l
+  VarExp : (vId : VariableId) -> {auto p : ElemFirstComponent vId l} -> Exp False (findType vId l p) l
   SingleExp : (v : V t) -> Exp False t l
   PlusExp : (x : Exp a NatTy l) -> (y : Exp b NatTy l) -> Exp (a || b) NatTy l
   IfExp : (cond : Exp a BoolTy l) -> (x : Exp b t l) -> (y : Exp c t l) -> Exp (a || b || c) t l
   ThrowExp : Exp True t l
   CatchExp : (x : Exp a t l) -> (h : Exp b t l) -> Exp (a && b) t l
 
-data Program : List (VariableId, TyExp) -> Type where
-  EmptyProgram : Program env
+data Program : List (VariableId, TyExp) -> List (VariableId, TyExp) -> Type where
+  EmptyProgram : Program env []
 
   Declaration : (vId : VariableId) ->
                 (exp : Exp b t env) ->
                 {auto expExecutable : b = False} ->
-                (continuing : Program ((vId, t) :: env)) ->
-                (Program env)
+                (continuing : Program ((vId, t) :: env) c1) ->
+                (Program env ((vId, t) :: c1))
 
   Assignment : (vId : VariableId) ->
                (exp : Exp b t env) ->
                {auto expExecutable : b = False} ->
-               (continuing : Program ((vId, t) :: env)) ->
+               (continuing : Program ((vId, t) :: env) c1) ->
                {auto prf' : Elem (vId, t) env} ->
-               (Program env)
+               (Program env ((vId, t) :: c1))
 
 {-
 x<- 3;        -- [x <- 3]
@@ -59,149 +59,74 @@ x<- x+1       -- [x <- 4]
 y<- x+2       -- [x <- 4, y <- 2]
 -}
 
-myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] []
 myEmpty = EmptyProgram
 
-yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)]
+yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)] [("y", NatTy)]
 yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
 
-xEqualsXPlusOne : Program [("x", NatTy)]
+xEqualsXPlusOne : Program [("x", NatTy)] [("x", NatTy), ("y", NatTy)]
 xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
 
-xEquals3 : Program []
-xEquals3 = Declaration "x" (SingleExp (VNat 1)) xEqualsXPlusOne
-
-{- TypesEnv: Type
-TypesEnv = List (VariableId, TyExp) -}
-
+xEquals3 : Program [] [("x", NatTy), ("x", NatTy), ("y", NatTy)]
+xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
 
 data ValuesEnv : List (VariableId, TyExp) -> Type where
    EmptyValuesEnv : ValuesEnv []
-   MoreValuesEnv : (id: VariableId) -> V ty -> ValuesEnv envTy
-                   -> ValuesEnv ((id, ty) :: envTy)
-
-
---eval : (e : Exp b t tEnv) -> (ValuesEnv tEnv) -> {auto p : b = False} -> V t
-
+   MoreValuesEnv : (vId: VariableId)
+                   -> V ty
+                   -> ValuesEnv envTy
+                   -> ValuesEnv ((vId, ty) :: envTy)
 
 mutual
-  evalProgram : (p : Program env) -> (valueEnv : ValuesEnv env) -> ValuesEnv ((vId, t) :: env)
-  evalProgram EmptyProgram valueEnv = ?asdasdasd
-  evalProgram (Declaration vId exp continuing {expExecutable}) valueEnv = ?asdasd
-    -- evalProgram continuing (MoreValuesEnv vId (eval exp valueEnv) valueEnv)
-    -- x <- 1
-    -- (vId, evaluated expression ) :: (recursive call on continuing)
-  evalProgram (Assignment vId exp continuing) valueEnv = ?evalProgram_rhs_3
+  evalVarExp : (x : ValuesEnv tEnv) -> (p : ElemFirstComponent vId tEnv)  -> V (findType vId tEnv p)
+  evalVarExp (MoreValuesEnv _ val _) Here = val
+  evalVarExp (MoreValuesEnv _ _ valueEnv) (There later) = evalVarExp valueEnv later
+
+  evalPlusExp : (x : Exp a NatTy tEnv) -> (y : Exp b NatTy tEnv) -> (valuesEnv : ValuesEnv tEnv) -> (prf : (a || (Delay b)) = False) -> V NatTy
+  evalPlusExp x y valuesEnv prf {a = False} {b = False} =
+    case eval x valuesEnv of
+          (VNat x') => case eval y valuesEnv of
+                             (VNat y') => VNat (x' + y')
+  evalPlusExp _ _ _ Refl {a = False} {b = True} impossible
+  evalPlusExp _ _ _ Refl {a = True} {b = _} impossible
+
+  evalIfExp : (cond : Exp a BoolTy tEnv) -> (x : Exp b t tEnv) -> (y : Exp c t tEnv) -> (valuesEnv : ValuesEnv tEnv) -> (prf : (a || (Delay (b || (Delay c)))) = False) -> V t
+  evalIfExp cond x y valuesEnv prf {a = False} {b = False} {c = False} =
+    case eval cond valuesEnv of
+          VBool True => eval x valuesEnv
+          VBool False => eval y valuesEnv
+  evalIfExp _ _ _ _ Refl {a = False} {b = False} {c = True} impossible
+  evalIfExp _ _ _ _ Refl {a = False} {b = False} {c = True} impossible
+  evalIfExp _ _ _ _ Refl {a = True} {b = _} {c = _} impossible
+
+  evalCatchExp : (x : Exp a t tEnv) -> (h : Exp b t tEnv) -> (valuesEnv : ValuesEnv tEnv) ->(prf : (a && (Delay b)) = False) -> V t
+  evalCatchExp x h valuesEnv prf {a = False} = eval x valuesEnv
+  evalCatchExp x h valuesEnv prf {a = True} {b = False} = eval h valuesEnv
+  evalCatchExp _ _ _ Refl {a = True} {b = True} impossible
+
+  eval : (e : Exp b t tEnv) -> (valuesEnv : ValuesEnv tEnv) -> {auto prf : b = False} -> V t
+  eval (VarExp vId {p}) valuesEnv = evalVarExp valuesEnv p
+  eval (SingleExp v) valuesEnv = v
+  eval (PlusExp x y) valuesEnv {prf} = evalPlusExp x y valuesEnv prf
+  eval (IfExp cond x y) valuesEnv {prf} = evalIfExp cond x y valuesEnv prf
+  eval ThrowExp _ {prf = Refl} impossible
+  eval (CatchExp x h) valuesEnv {prf}= evalCatchExp x h valuesEnv prf
 
 
-{-
-evalProgram EmptyProgram x = EmptyValuesEnv
-evalProgram (Declaration vId exp continuing) valueEnv =
-  let evaluatedExp = (eval exp valueEnv) in
-  MoreValuesEnv vId evaluatedExp (evalProgram ?asdasd ?asdasd)
-evalProgram (Assignment vId exp continuing) valueEnv =
-  let evaluatedExp = (eval exp valueEnv) in
-  MoreValuesEnv vId evaluatedExp ?qqqq
--}
---evalProgram EmptyProgram y = y
---evalProgram (Declaration vId exp continuing) valueEnv =
---  let evaluatedExp = (eval exp valueEnv) in
---  let ta = MoreValuesEnv vId evaluatedExp (evalProgram continuing valueEnv)  in
+evPro : (p : Program env env') -> (valueEnv : ValuesEnv env) -> ValuesEnv env'
+evPro EmptyProgram valueEnv = EmptyValuesEnv
+evPro (Declaration vId exp continuing) valueEnv =
+  let evaluated = eval exp valueEnv in
+  MoreValuesEnv vId evaluated
+    (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
+evPro (Assignment vId exp continuing) valueEnv =
+  let evaluated = eval exp valueEnv in
+  MoreValuesEnv vId evaluated
+    (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
 
-  -- (vId, evaluate exp) :: evalProgram .....
-
-  --MoreValuesEnv vId (eval exp valueEnv) (evalProgram continuing)
--- evalProgram (Assignment vId exp continuing) valueEnv = ?evalProgram_rhs_3
-
-
-types : (p : Program env) -> List (VariableId, TyExp)
-types EmptyProgram = []
-types (Declaration vId exp {t} continuing) = (vId, t) :: types continuing
-types (Assignment vId exp {t} continuing) = (vId, t) :: types continuing
-
-{-
-eval : (e : Exp b t tEnv) -> {auto p : b = False} -> V t
-
-
-
-data Result : List (VariableId, TyExp) -> Type where
-  EmptyResult : Result []
-  ContinuingResult : (V t) -> (vId : VariableId) -> Result xs -> Result ((vId, t) :: xs)
-
-evalProgram : (p : Program env) -> Result (types(p))
-evalProgram EmptyProgram = EmptyResult
-evalProgram (Declaration vId exp {b = False} continuing) = ContinuingResult (eval exp) vId (evalProgram continuing)
-evalProgram (Declaration vId exp {b = True} continuing) = ?asdasd_2 --
-evalProgram (Assignment vId exp {b = False} continuing ) = ContinuingResult (eval exp) vId (evalProgram continuing)
-evalProgram (Assignment vId exp {b = True} continuing) = ?evalProgram_rhs_2
--}
-
-{-
-data Trace : List (String, TyExp) -> Type where
-  EmptyTrace : Trace []
-  TraceStep : (V t) -> (id : VariableId) -> (prf: Trace xs) -> Trace ((id, t) :: xs)
-
-evalProgram : (p : Program env ts) -> Type
-evalProgram p {ts} = ?evalProgram_rhs
--}
-{-
-evalProgram : (p : Program env) -> Trace p
-evalProgram EmptyProgram = []
-evalProgram (Declaration vId exp y) = ?evalProgram_rhs_2
-evalProgram (Assignment vId exp x) = ?evalProgram_rhs_3
--}
-
-{-
-
-mutual
-    findVariable : (p : False = False) -> (myProof : ElemFirstComponent id tEnv) -> (env : Trace tEnv) -> V (findType id tEnv myProof)
-    findVariable p Here (TraceStep x id prf) = x
-    findVariable p (There later) (TraceStep x id prf) = findVariable p later prf
-
-    evalPlusExp : (x : Exp a NatTy tEnv) -> (y : Exp b NatTy tEnv) -> (env : Trace tEnv) ->  (p : (a || (Delay b)) = False) -> V NatTy
-    evalPlusExp x y env p {a = False} {b = False} =
-      case eval x env of
-            (VNat x') => case eval y env of
-                               (VNat y') => VNat (x' + y')
-    evalPlusExp _ _ _ Refl {a = False} {b = True} impossible
-    evalPlusExp _ _ _ Refl {a = True} {b = _} impossible
-
-    evalIfExp : (cond : Exp a BoolTy tEnv) -> (x : Exp b t tEnv) -> (y : Exp c t tEnv) -> (env : Trace tEnv) ->   (p : (a || (Delay (b || (Delay c)))) = False) -> V t
-    evalIfExp cond x y env p {a = False} {b = False} {c = False} =
-      case eval cond env of
-            VBool True => eval x env
-            VBool False => eval y env
-    evalIfExp _ _ _ _ Refl {a = False} {b = False} {c = True} impossible
-    evalIfExp _ _ _ _ Refl {a = False} {b = True} {c = _} impossible
-    evalIfExp _ _ _ _ Refl {a = True} {b = _} {c = _} impossible
-
-    evalCatchExp : (x : Exp a t tEnv) -> (h : Exp b t tEnv) -> (env : Trace tEnv) -> (p : (a && (Delay b)) = False) -> V t
-    evalCatchExp x h env p {a = False} {b} = eval x env
-    evalCatchExp x h env p {a = True} {b = False} = eval h env
-    evalCatchExp _ _ _ Refl {a = True} {b = True} impossible
-
-    eval : (e : Exp b t tEnv) -> (env : Trace tEnv) -> {auto p : b = False} -> V t
-    eval (VarExp {p=myProof} id) env {p} = findVariable p myProof env
-    eval (SingleExp v) env = v
-    eval (PlusExp x y) env {p} = evalPlusExp x y env p
-    eval (IfExp cond x y) env {p} = evalIfExp cond x y env p
-    eval ThrowExp _ {p = Refl} impossible
-    eval (CatchExp x h) env {p} = evalCatchExp x h env p
-
-evalProgram : (program : Program envt) -> Trace envt
-evalProgram EmptyProgram = EmptyTrace
-evalProgram (Statement (id, exp) previous) =
-  let evaluatedPrevious = evalProgram previous in
-  let evaluatedExpresion = eval exp evaluatedPrevious in
-  TraceStep evaluatedExpresion id evaluatedPrevious
--}
-{-
-var x = 0;
-var y = 42;
-var z = 17;
-x = x + y + z;
--}
-
+evalProgram : (p : Program [] env') -> ValuesEnv env'
+evalProgram p = evPro p EmptyValuesEnv
 
 mutual
   El : Ty -> Type
@@ -218,49 +143,61 @@ mutual
     UNMARK : Code (t :: s) s' -> Code (t :: (Han s s') :: s) s'
     HALT : Code s s
 
-
-
-{-
---comp?
-compCatch : Exp b ty env -> Code (Val ty :: (s'' ++ (Han s s') :: s)) s' -> Code (s'' ++ (Han s s') :: s) s'
-compCatch (VarExp id) c = ?compCatch_rhs_1
-compCatch (SingleExp v) c = PUSH v c
-compCatch (PlusExp x y) c = compCatch x (compCatch {s'' = Val NatTy :: _} y (ADD c))
-compCatch {s} {s''} (IfExp cond x y) c = compCatch cond (IF (compCatch x c) (compCatch y c))
-compCatch ThrowExp c = THROW
-compCatch (CatchExp x h) c = MARK (compCatch h c) (compCatch {s'' = []} x (UNMARK c))
-
-
 mutual
-  compPlusExp : (p : (a || b) = False) -> (x : Exp a NatTy) ->  (y : Exp b NatTy) -> (c : Code ((Val NatTy) :: s) s') -> Code s s'
-  compPlusExp {a = False} {b = False} Refl x y c =
-    comp Refl x (comp Refl y (ADD c))
-  compPlusExp {a = False} {b = True} Refl _ _ _ impossible
-  compPlusExp {a = True} {b = _} Refl _ _ _ impossible
+  compCatchVarExp : (valueEnv : ValuesEnv env) -> (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: (s'' ++ ((Han s s') :: s))) s') -> Code (s'' ++ ((Han s s') :: s)) s'
+  compCatchVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
+  compCatchVarExp (MoreValuesEnv _ _ y) (There later) c = compCatchVarExp y later c
 
-  compCatchExp : (p : (a && b) = False) -> (x : Exp a ty) -> (h : Exp b ty) -> (c : Code ((Val ty) :: s) s') -> Code s s'
-  compCatchExp {a = False} Refl x h c =
-    comp Refl x c
-  compCatchExp {a = True} {b = False} p x h c =
-    MARK (comp Refl h c) (compCatch {s'' = []} x (UNMARK c))
-  compCatchExp {a = True} {b = True} Refl _ _ _ impossible
+  compCatch : (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> (c : Code (Val ty :: (s'' ++ (Han s s') :: s)) s') -> Code (s'' ++ (Han s s') :: s) s'
+  compCatch (VarExp vId {p}) valueEnv c = compCatchVarExp valueEnv p c
+  compCatch (SingleExp v) valueEnv c = PUSH v c
+  compCatch (PlusExp x y) valueEnv c =
+    compCatch x valueEnv (compCatch {s'' = Val NatTy :: _} y valueEnv (ADD c))
+  compCatch (IfExp cond x y) valueEnv c =
+    compCatch cond valueEnv (IF (compCatch x valueEnv c) (compCatch y valueEnv c))
+  compCatch ThrowExp valueEnv c = THROW
+  compCatch (CatchExp x h) valueEnv c =
+    MARK (compCatch h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
 
-  compIfExp : (p : (a || b || c) = False) -> (cond : Exp a BoolTy) ->(x : Exp b ty) -> (y : Exp c ty) -> (co : Code ((Val ty) :: s) s') -> Code s s'
-  compIfExp {a = False} {b = False} {c = False} Refl cond x y co =
-     comp Refl cond (IF (comp Refl x co) (comp Refl y co))
-  compIfExp {a = False} {b = False} {c = True} Refl _ _ _ _ impossible
-  compIfExp {a = False} {b = False} {c = True} Refl _ _ _ _ impossible
-  compIfExp {a = True} Refl _ _ _ _ impossible
+  compPlusExp : (prf : (a || (Delay b)) = False) -> (x : Exp a NatTy env) ->  (y : Exp b NatTy env) -> (valueEnv : ValuesEnv env) -> (c : Code ((Val NatTy) :: s) s')  -> Code s s'
+  compPlusExp prf x y valueEnv c {a = False} {b = False} =
+    (comp Refl x valueEnv (comp Refl y valueEnv (ADD c)))
+  compPlusExp Refl _ _ _ _ {a = False} {b = True} impossible
+  compPlusExp Refl _ _ _ _ {a = True} {b = _} impossible
 
-  comp : (b = False) -> Exp b ty -> Code (Val ty :: s) s' -> Code s s'
-  comp p (SingleExp v) c = PUSH v c
-  comp p (PlusExp x y) c = compPlusExp p x y c
-  comp p (IfExp cond x y) co = compIfExp p cond x y co
-  comp p (CatchExp x h) c = compCatchExp p x h c
-  comp Refl ThrowExp _ impossible
+  compIfExp :
+    (prf : (a || (Delay (b || (Delay c)))) = False) -> (cond : Exp a BoolTy env) ->
+    (x : Exp b ty env) -> (y : Exp c ty env) -> (valueEnv : ValuesEnv env) ->
+    (co : Code ((Val ty) :: s) s') -> Code s s'
+  compIfExp prf cond x y valueEnv co {a = False} {b = False} {c = False} =
+    comp Refl cond valueEnv (IF (comp Refl x valueEnv co) (comp Refl y valueEnv co))
+  compIfExp Refl _ _ _ _ _ {a = False} {b = False} {c = True} impossible
+  compIfExp Refl _ _ _ _ _ {a = False} {b = True} {c = _} impossible
+  compIfExp Refl _ _ _ _ _ {a = True} {b = _} {c = _} impossible
 
-compile : (b = False) -> Exp b ty -> Code s (Val ty :: s)
-compile p e = comp p e HALT
+  compCatchExp :
+    (prf : (a && (Delay b)) = False) -> (x : Exp a ty env) -> (h : Exp b ty env) ->
+    (valueEnv : ValuesEnv env) -> (c : Code ((Val ty) :: s) s') -> Code s s'
+  compCatchExp prf x h valueEnv c {a = False} =
+    comp Refl x valueEnv c
+  compCatchExp prf x h valueEnv c {a = True} {b = False} =
+    MARK (comp Refl h valueEnv c) (compCatch {s'' = []} x valueEnv (UNMARK c))
+  compCatchExp Refl _ _ _ _ {a = True} {b = True} impossible
+
+  compVarExp : (valueEnv : ValuesEnv env) -> (p : ElemFirstComponent vId env) -> (c : Code ((Val (findType vId env p)) :: s) s') -> Code s s'
+  compVarExp (MoreValuesEnv _ x _) Here c = PUSH x c
+  compVarExp (MoreValuesEnv _ _ y) (There later) c = compVarExp y later c
+
+  comp : (prf : b = False) -> (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> Code (Val ty :: s) s' -> Code s s'
+  comp prf (VarExp vId {p}) valueEnv c = compVarExp valueEnv p c
+  comp prf (SingleExp v) valueEnv c = PUSH v c
+  comp prf (PlusExp x y) valueEnv c = compPlusExp prf x y valueEnv c
+  comp prf (IfExp cond x y) valueEnv co = compIfExp prf cond x y valueEnv co
+  comp prf (CatchExp x h) valueEnv c = compCatchExp prf x h valueEnv c
+  comp Refl ThrowExp _ _ impossible
+
+compile : {auto prf : b = False} -> (exp : Exp b ty env) -> (valueEnv : ValuesEnv env) -> Code s (Val ty :: s)
+compile exp valueEnv {prf = Refl} = comp Refl exp valueEnv HALT
 
 data Stack : (s : StackType) -> Type where
   Nil : Stack []
@@ -287,6 +224,7 @@ mutual
   fail {s'' = []} (h' :: s) = exec h' s
   fail {s'' = (_ :: _)} (_ :: s) = fail s
 
+{-
 partial
 testExp : (t = False) -> Exp t tyExp -> V tyExp -> Bool
 testExp Refl e (VNat n) =
@@ -303,7 +241,7 @@ checkAll : List (Exp False tyExp, V tyExp) -> Bool
 checkAll [] = True
 checkAll ((e, r) :: xs) = (testExp Refl e r) && checkAll xs
 
-e1 : Exp False NatTy
+e1 : Exp False NatTy l
 e1 = CatchExp ThrowExp (PlusExp (SingleExp (VNat 2)) (SingleExp (VNat 3)))
 r1 : V NatTy
 r1 = VNat 5
