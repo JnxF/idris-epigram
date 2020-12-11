@@ -45,7 +45,7 @@ data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
   CatchExp : (x : Exp a t l) -> (h : Exp b t l) -> Exp (a && b) t l
 
 data Program : List (VariableId, TyExp) -> List (VariableId, TyExp) -> Type where
-  EmptyProgram : Program env []
+  EmptyProgram : Program env env
 
   Declaration : (vId : VariableId) ->
                 (exp : Exp b t env) ->
@@ -66,17 +66,17 @@ x<- x+1       -- [x <- 4]
 y<- x+2       -- [x <- 4, y <- 2]
 -}
 
--- myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] []
--- myEmpty = EmptyProgram
---
--- yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)] [("y", NatTy)]
--- yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
---
--- xEqualsXPlusOne : Program [("x", NatTy)] [("x", NatTy), ("y", NatTy)]
--- xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
---
--- xEquals3 : Program [] [("x", NatTy), ("x", NatTy), ("y", NatTy)]
--- xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
+myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+myEmpty = EmptyProgram
+
+yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
+
+xEqualsXPlusOne : Program [("x", NatTy)] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
+
+xEquals3 : Program [] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
 
 data ValuesEnv : List (VariableId, TyExp) -> Type where
    EmptyValuesEnv : ValuesEnv []
@@ -122,7 +122,7 @@ mutual
 
 
 evPro : (p : Program env env') -> (valueEnv : ValuesEnv env) -> ValuesEnv env'
-evPro EmptyProgram valueEnv = EmptyValuesEnv
+evPro EmptyProgram valueEnv = valueEnv
 evPro (Declaration vId exp continuing) valueEnv =
   let evaluated = eval exp valueEnv in
   evPro continuing (MoreValuesEnv vId evaluated valueEnv)
@@ -197,21 +197,14 @@ mutual
   --compile_aux : (continuing : Program ((vId, t) :: tenv) c1) -> (exp : Exp b t tenv) -> (expExecutable : b = False) -> Code s s' tenv ((vId, t) :: c1)
 
   partial
-  compile : (prog: Program tenv tenv') -> (next: Code s1 s' tenv'' tenv') -> Code s s' tenv tenv'
-  compile (Declaration vId exp {expExecutable} continuing) = ?asdasdkalsda
-    --comp expExecutable exp (STORE vId (compile continuing next))
-    --comp expExecutable exp (STORE vId (compile continuing))
-  compile (Declaration vId exp EmptyProgram) = ?asdasaa
-    --comp expExecutable exp (STORE vId HALT)
-  compile (Assignment vId exp continuing) = ?sjlkd
-    --comp expExecutable exp (STORE vId (compile continuing))
-  compile (Assignment vId exp EmptyProgram) = ?asdasaaa
-    --comp expExecutable exp (STORE vId HALT)
+  compile : (prog: Program tenv tenv') -> Code s s tenv tenv'
+  compile (Declaration vId exp {expExecutable} continuing) = --compile_aux continuing exp expExecutable
+    comp expExecutable exp (STORE vId (compile continuing))
+  compile (Assignment vId exp {expExecutable} continuing) =
+    comp expExecutable exp (STORE vId (compile continuing))
+  compile EmptyProgram = HALT
 
-  compileProgram: (prog: Program [] tenv') -> Code s s' [] tenv'
-  --    compile p e = comp p e HALT
 
---
 data Stack : (s : StackType) -> Type where
   Nil : Stack []
   (::) : El t -> Stack s -> Stack (t :: s)
