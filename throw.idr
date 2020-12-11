@@ -30,13 +30,11 @@ data Exp : Bool -> TyExp -> List (VariableId, TyExp) -> Type where
 
 data Program : List (VariableId, TyExp) -> List (VariableId, TyExp) -> Type where
   EmptyProgram : Program env env
-
   Declaration : (vId : VariableId) ->
                 (exp : Exp b t env) ->
                 {auto expExecutable : b = False} ->
                 (continuing : Program ((vId, t) :: env) env') ->
                 (Program env env')
-
   Assignment : (vId : VariableId) ->
                (exp : Exp b t env) ->
                {auto expExecutable : b = False} ->
@@ -45,11 +43,9 @@ data Program : List (VariableId, TyExp) -> List (VariableId, TyExp) -> Type wher
                (Program env env')
 
 data ValuesEnv : List (VariableId, TyExp) -> Type where
-   EmptyValuesEnv : ValuesEnv []
-   MoreValuesEnv : (vId: VariableId)
-                   -> V ty
-                   -> ValuesEnv envTy
-                   -> ValuesEnv ((vId, ty) :: envTy)
+  EmptyValuesEnv : ValuesEnv []
+  MoreValuesEnv : (vId: VariableId) -> V ty -> ValuesEnv envTy
+                  -> ValuesEnv ((vId, ty) :: envTy)
 
 mutual
   evalVarExp : (x : ValuesEnv tEnv) -> (p : Elem (vId, ty) tEnv)  -> V ty
@@ -147,7 +143,6 @@ mutual
   comp p (CatchExp x h) c = compCatchExp p x h c
   comp Refl ThrowExp _ impossible
 
-
   partial
   compile : (prog: Program tenv tenv') -> Code [] [] tenv tenv'
   compile (Declaration vId exp {expExecutable} continuing) =
@@ -155,7 +150,6 @@ mutual
   compile (Assignment vId exp {expExecutable} continuing) =
     comp expExecutable exp (STORE vId (compile continuing))
   compile EmptyProgram = HALT
-
 
 data Stack : (s : StackType) -> Type where
   Nil : Stack []
@@ -174,8 +168,8 @@ mutual
   partial
   exec : Code s s' h h' -> Stack s -> Heap h -> (Stack s', Heap h')
   exec (LOAD {prf} vId c) s h = case lookup h prf of
-                                (VNat v) => exec c (v :: s) h
-                                (VBool v) => exec c (v :: s) h
+    (VNat v) => exec c (v :: s) h
+    (VBool v) => exec c (v :: s) h
   exec (STORE vId c) {s=(Val NatTy)::_} (x :: tl) h = exec c tl (HeapCons vId (VNat x) h)
   exec (STORE vId c) {s=(Val BoolTy)::_} (x :: tl) h = exec c tl (HeapCons vId (VBool x) h)
   exec (PUSH (VNat x) c) s h = exec c (x :: s) h
@@ -193,12 +187,14 @@ mutual
   fail {s'' = []} (handler' :: s) h = exec handler' s h
   fail {s'' = (_ :: _)} (_ :: s) h = fail s h
 
-{-
-x<- 3;        -- []
-x<- x+1       -- [x <- 3]
-y<- x+2       -- [x <- 4,]
-empty         -- [y <- 6, x <- 4]
--}
+
+-- Example of an entire program
+-- `entireProgram`
+
+-- x <- 3           -- []
+-- x <- x + 1       -- [x <- 3]
+-- y <- x + 2       -- [x <- 4]
+-- emptyProgram     -- [y <- 6, x <- 4]
 
 myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
 myEmpty = EmptyProgram
@@ -209,15 +205,15 @@ yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) my
 xEqualsXPlusOne : Program [("x", NatTy)] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
 xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
 
-xEquals3 : Program [] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
-xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
+entireProgram : Program [] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+entireProgram = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
 
-evaluatedProgram : ValuesEnv [("y", NatTy),("x", NatTy),("x", NatTy)]
-evaluatedProgram = evalProgram xEquals3
+evaluatedProgram : ValuesEnv [("y", NatTy), ("x", NatTy), ("x", NatTy)]
+evaluatedProgram = evalProgram entireProgram
 
 compiledProgram :  Code [] [] [] [("y", NatTy), ("x", NatTy), ("x", NatTy)]
-compiledProgram = compile xEquals3
+compiledProgram = compile entireProgram
 
 partial
-executedProgram : (Stack [], Heap [("y", NatTy),("x", NatTy),("x", NatTy)])
+executedProgram : (Stack [], Heap [("y", NatTy), ("x", NatTy), ("x", NatTy)])
 executedProgram = exec (compiledProgram) [] HeapNil
