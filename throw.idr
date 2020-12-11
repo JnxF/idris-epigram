@@ -50,15 +50,15 @@ data Program : List (VariableId, TyExp) -> List (VariableId, TyExp) -> Type wher
   Declaration : (vId : VariableId) ->
                 (exp : Exp b t env) ->
                 {auto expExecutable : b = False} ->
-                (continuing : Program ((vId, t) :: env) c1) ->
-                (Program env ((vId, t) :: c1))
+                (continuing : Program ((vId, t) :: env) env') ->
+                (Program env env')
 
   Assignment : (vId : VariableId) ->
                (exp : Exp b t env) ->
                {auto expExecutable : b = False} ->
-               (continuing : Program ((vId, t) :: env) c1) ->
+               (continuing : Program ((vId, t) :: env) env') ->
                {auto prf' : Elem (vId, t) env} ->
-               (Program env ((vId, t) :: c1))
+               (Program env env')
 
 {-
 x<- 3;        -- [x <- 3]
@@ -66,17 +66,17 @@ x<- x+1       -- [x <- 4]
 y<- x+2       -- [x <- 4, y <- 2]
 -}
 
-myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] []
-myEmpty = EmptyProgram
-
-yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)] [("y", NatTy)]
-yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
-
-xEqualsXPlusOne : Program [("x", NatTy)] [("x", NatTy), ("y", NatTy)]
-xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
-
-xEquals3 : Program [] [("x", NatTy), ("x", NatTy), ("y", NatTy)]
-xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
+-- myEmpty : Program [("y", NatTy), ("x", NatTy), ("x", NatTy)] []
+-- myEmpty = EmptyProgram
+--
+-- yEqualsXPlusTwo : Program [("x", NatTy), ("x", NatTy)] [("y", NatTy)]
+-- yEqualsXPlusTwo = Declaration "y" (PlusExp (VarExp "x") (SingleExp (VNat 2))) myEmpty
+--
+-- xEqualsXPlusOne : Program [("x", NatTy)] [("x", NatTy), ("y", NatTy)]
+-- xEqualsXPlusOne = Assignment "x" (PlusExp (VarExp "x") (SingleExp (VNat 1))) yEqualsXPlusTwo
+--
+-- xEquals3 : Program [] [("x", NatTy), ("x", NatTy), ("y", NatTy)]
+-- xEquals3 = Declaration "x" (SingleExp (VNat 3)) xEqualsXPlusOne
 
 data ValuesEnv : List (VariableId, TyExp) -> Type where
    EmptyValuesEnv : ValuesEnv []
@@ -125,12 +125,16 @@ evPro : (p : Program env env') -> (valueEnv : ValuesEnv env) -> ValuesEnv env'
 evPro EmptyProgram valueEnv = EmptyValuesEnv
 evPro (Declaration vId exp continuing) valueEnv =
   let evaluated = eval exp valueEnv in
-  MoreValuesEnv vId evaluated
-    (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
+  evPro continuing (MoreValuesEnv vId evaluated valueEnv)
+  -- let evaluated = eval exp valueEnv in
+  -- MoreValuesEnv vId evaluated
+  --   (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
 evPro (Assignment vId exp continuing) valueEnv =
   let evaluated = eval exp valueEnv in
-  MoreValuesEnv vId evaluated
-    (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
+  evPro continuing (MoreValuesEnv vId evaluated valueEnv)
+  -- let evaluated = eval exp valueEnv in
+  -- MoreValuesEnv vId evaluated
+  --   (evPro continuing (MoreValuesEnv vId evaluated valueEnv))
 
 evalProgram : (p : Program [] env') -> ValuesEnv env'
 evalProgram p = evPro p EmptyValuesEnv
@@ -140,6 +144,8 @@ mutual
   El (Han t t' h h') = Code t t' h h'
   El (Val NatTy) = Nat
   El (Val BoolTy) = Bool
+
+  -- STORE input:  Code s s' tenv ((vId, ty)::tenv')
 
   data Code : (s : StackType) -> (s' : StackType) -> (h: HeapType) -> (h': HeapType) -> Type where
     STORE : (vId: VariableId) -> (c: Code s s' ((vId, ty)::h) h') -> Code ((Val ty)::s) s' h h'
@@ -185,14 +191,24 @@ mutual
   comp p (CatchExp x h) c = compCatchExp p x h c
   comp Refl ThrowExp _ impossible
 
-  compile : (prog: Program tenv ((vId,ty)::tenv)) -> Code s s' tenv ((vId,ty)::tenv)
-  compile (Declaration vId exp {expExecutable} continuing) = ?compile_rhs_1
-    let exp_compiled = comp expExecutable exp HALT in
-    (STORE vId exp_compiled)
-  compile (Declaration vId exp EmptyProgram) = ?compile_rhs_2
-  compile (Assignment vId exp continuing) = ?compile_rhs_3
-  compile (Assignment vId exp EmptyProgram) = ?compile_rhs_4
 
+
+  -- compile continuin = (prog: Program ((vId, t) :: tenv) tenv') -> Code s s' tenv tenv'
+  --compile_aux : (continuing : Program ((vId, t) :: tenv) c1) -> (exp : Exp b t tenv) -> (expExecutable : b = False) -> Code s s' tenv ((vId, t) :: c1)
+
+  partial
+  compile : (prog: Program tenv tenv') -> (next: Code s1 s' tenv'' tenv') -> Code s s' tenv tenv'
+  compile (Declaration vId exp {expExecutable} continuing) = ?asdasdkalsda
+    --comp expExecutable exp (STORE vId (compile continuing next))
+    --comp expExecutable exp (STORE vId (compile continuing))
+  compile (Declaration vId exp EmptyProgram) = ?asdasaa
+    --comp expExecutable exp (STORE vId HALT)
+  compile (Assignment vId exp continuing) = ?sjlkd
+    --comp expExecutable exp (STORE vId (compile continuing))
+  compile (Assignment vId exp EmptyProgram) = ?asdasaaa
+    --comp expExecutable exp (STORE vId HALT)
+
+  compileProgram: (prog: Program [] tenv') -> Code s s' [] tenv'
   --    compile p e = comp p e HALT
 
 --
