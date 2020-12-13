@@ -16,7 +16,7 @@ Based on the following papers:
 
 ## Report PDF
 
-TBD
+Check our [report](report.pdf) explaining our development process and conclusions about the project.
 
 ## Installation
 Install [Idris 1](https://www.idris-lang.org/pages/download.html).
