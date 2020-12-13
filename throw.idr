@@ -1,3 +1,8 @@
+-- Idris implementation of a type-correct, stack-safe
+-- compiler including exception handling.
+--
+-- Morten S. Knudsen, Jeppe Vinberg, Francisco M. Lasaca
+
 import Data.List
 
 %default total
