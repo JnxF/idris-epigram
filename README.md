@@ -1,4 +1,4 @@
-# Safe EPIGRAM
+# Idris EPIGRAM
 ![Idris workflow](https://github.com/jnxf/safe-epigram/workflows/Idris%20workflow/badge.svg)
 ![Hits](https://visitor-badge.glitch.me/badge?page_id=jnxf.safe-idris)
 [![GitHub stars](https://img.shields.io/github/stars/JnxF/safe-epigram.svg)](https://GitHub.com/JnxF/safe-epigram/stargazers/)
